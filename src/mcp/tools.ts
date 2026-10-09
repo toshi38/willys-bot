@@ -12,7 +12,8 @@ const text = (value: unknown) => ({
   content: [{ type: "text" as const, text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }],
 });
 
-export function buildServer(ctx: Context, member: string): McpServer {
+// readOnly leaves out the list-changing tools, for the weekly planner.
+export function buildServer(ctx: Context, member: string, { readOnly = false } = {}): McpServer {
   const { store, willys, household } = ctx;
   const server = new McpServer(
     { name: "willys-bot", version: "0.1.0" },
@@ -31,7 +32,7 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
     async () => text(store.listItems().map(({ id, text: t, quantity, note, productCode, addedBy, addedAt }) => ({ id, text: t, quantity, note, productCode, productName: productCode ? store.productName(productCode) : null, addedBy, addedAt }))),
   );
 
-  server.registerTool(
+  if (!readOnly) server.registerTool(
     "list_add",
     {
       description:
@@ -52,7 +53,7 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
     async ({ items }) => text(items.map((i) => store.addListItem({ ...i, addedBy: member }))),
   );
 
-  server.registerTool(
+  if (!readOnly) server.registerTool(
     "list_update",
     {
       description: "Change an item on the list: pin it to a product, or change quantity or note.",
@@ -66,7 +67,7 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
     async ({ id, ...patch }) => text(store.updateListItem(id, patch) ?? `No item #${id}`),
   );
 
-  server.registerTool(
+  if (!readOnly) server.registerTool(
     "list_remove",
     { description: "Remove an item from the list.", inputSchema: { id: z.number().int() } },
     async ({ id }) => text(store.updateListItem(id, { status: "removed" }) ?? `No item #${id}`),
@@ -103,7 +104,7 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
   server.registerTool(
     "current_offers",
     {
-      description: "This week's Willys offers at the household's store, from the latest daily snapshot. Filter by a word in the name or brand.",
+      description: "This week's Willys online offers (the ones that apply to a click-and-collect order) at the household's store, from the latest daily snapshot. Filter by a word in the name or brand.",
       inputSchema: { filter: z.string().optional(), limit: z.number().int().min(1).max(200).default(50) },
     },
     async ({ filter, limit }) => text(store.currentOffers(filter, limit)),

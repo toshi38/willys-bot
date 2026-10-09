@@ -8,10 +8,10 @@ import { buildServer } from "./tools.ts";
 // machine that has the household's data. --member names who is talking so
 // list items record who added them.
 
-const { values } = parseArgs({ options: { household: { type: "string" }, member: { type: "string" } } });
+const { values } = parseArgs({ options: { household: { type: "string" }, member: { type: "string" }, "read-only": { type: "boolean" } } });
 const ctx = openContext(householdId(values.household));
 const member = values.member ?? process.env.WILLYS_BOT_MEMBER ?? ctx.household.config.members[0].name;
-const server = buildServer(ctx, member);
+const server = buildServer(ctx, member, { readOnly: values["read-only"] ?? false });
 await server.connect(new StdioServerTransport());
 
 const shutdown = () => {

@@ -2,6 +2,7 @@ import { parseArgs } from "node:util";
 import { openContext, type Context } from "./core/context.ts";
 import { householdId } from "./core/household.ts";
 import { judgePrice, recordSearchResults, snapshotCampaigns } from "./core/prices.ts";
+import { apply, poll, propose } from "./plan/weekly.ts";
 
 const USAGE = `Usage: npm run wb -- <command> [--household <id>]
 
@@ -13,7 +14,11 @@ const USAGE = `Usage: npm run wb -- <command> [--household <id>]
   list remove <id>        remove an item
   cart                    show the Willys cart
   slots                   show pickup slots for the household's store
-  get <path>              GET a willys.se API path and print the JSON (exploration)`;
+  get <path>              GET a willys.se API path and print the JSON (exploration)
+  plan [--dry-run]        make this week's plan and email it to the members (--dry-run prints it)
+  poll [--dry-run]        act on replies to sent plans
+  apply <plan-id>         fill the cart and book a slot for a plan without waiting for a reply
+  plans                   list recent plans and their status`;
 
 async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -23,6 +28,8 @@ async function main(): Promise<void> {
       qty: { type: "string" },
       note: { type: "string" },
       limit: { type: "string" },
+      "dry-run": { type: "boolean" },
+      feedback: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -94,6 +101,27 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
       if (!path?.startsWith("/")) throw new Error("get needs a path starting with /");
       await ctx.ensureLogin();
       console.log(JSON.stringify(await willys.json(path), null, 2));
+      return;
+    }
+    case "plan": {
+      const row = await propose(ctx, { dryRun: values["dry-run"] === true, feedback: values.feedback as string | undefined });
+      console.log(`Plan ${row.id} ${values["dry-run"] ? "drafted" : "sent"}`);
+      return;
+    }
+    case "poll": {
+      for (const line of await poll(ctx, { dryRun: values["dry-run"] === true })) console.log(line);
+      return;
+    }
+    case "apply": {
+      const plan = store.plan(rest[0] ?? "");
+      if (!plan) throw new Error(`No plan ${rest[0]}`);
+      console.log(await apply(ctx, plan, { dryRun: values["dry-run"] === true }));
+      return;
+    }
+    case "plans": {
+      for (const p of store.plans(["draft", "sent", "approved", "rejected", "applied", "failed"]).slice(0, 20)) {
+        console.log(`${p.id} ${p.status.padEnd(8)} ${p.lines.length} lines${p.decidedBy ? `, by ${p.decidedBy}` : ""}${p.error ? `, error: ${p.error}` : ""}${p.decisionNote ? `, note: ${p.decisionNote.slice(0, 60)}` : ""}`);
+      }
       return;
     }
     default:

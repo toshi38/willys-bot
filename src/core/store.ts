@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Product } from "../willys/types.ts";
 
@@ -71,8 +72,11 @@ const today = () => now().slice(0, 10);
 
 export class Store {
   readonly #db: DatabaseSync;
+  // The household's data directory, which holds the database.
+  readonly dir: string;
 
   constructor(path: string) {
+    this.dir = dirname(path);
     this.#db = new DatabaseSync(path);
     this.#db.exec(`
       PRAGMA journal_mode = WAL;
@@ -214,20 +218,21 @@ export class Store {
   }
 
   // Promotions recorded on the latest snapshot day, optionally filtered by a
-  // word in the product name or brand.
-  currentOffers(filter?: string, limit = 50): Array<{ code: string; name: string; volume: string | null; kind: PriceKind; price: number; regular: number | null; label: string | null }> {
+  // word in the product name or brand. Online orders only get online
+  // promotions; in-store ones are kept for the price history.
+  currentOffers(filter?: string, limit = 50, kinds: PriceKind[] = ["online-promo"]): Array<{ code: string; name: string; volume: string | null; kind: PriceKind; price: number; regular: number | null; label: string | null }> {
     const like = `%${(filter ?? "").toLowerCase()}%`;
     return this.#db
       .prepare(
         `SELECT p.product_code AS code, pr.name, pr.volume, p.kind, p.price, p.label,
                 (SELECT r.price FROM prices r WHERE r.product_code = p.product_code AND r.observed_on = p.observed_on AND r.kind = 'regular') AS regular
          FROM prices p JOIN products pr ON pr.code = p.product_code
-         WHERE p.kind != 'regular'
+         WHERE p.kind IN (SELECT value FROM json_each(?))
            AND p.observed_on = (SELECT MAX(observed_on) FROM prices WHERE kind != 'regular')
            AND (lower(pr.name) LIKE ? OR lower(coalesce(pr.manufacturer, '')) LIKE ?)
          ORDER BY pr.name LIMIT ?`,
       )
-      .all(like, like, limit)
+      .all(JSON.stringify(kinds), like, like, limit)
       .map((r) => ({
         code: String(r.code),
         name: String(r.name),
@@ -239,9 +244,24 @@ export class Store {
       }));
   }
 
+  // What an online order pays: the lowest regular or online-promotion price
+  // on the most recent day the product was seen.
+  latestPrice(code: string): number | null {
+    const r = this.#db
+      .prepare(
+        `SELECT MIN(price) AS price FROM prices WHERE product_code = ? AND kind IN ('regular', 'online-promo')
+         AND observed_on = (SELECT MAX(observed_on) FROM prices WHERE product_code = ? AND kind IN ('regular', 'online-promo'))`,
+      )
+      .get(code, code);
+    return r && r.price !== null ? Number(r.price) : null;
+  }
+
   productName(code: string): string | null {
     const r = this.#db.prepare(`SELECT name, volume FROM products WHERE code = ?`).get(code);
-    return r ? [r.name, r.volume].filter(Boolean).join(" ") : null;
+    if (!r) return null;
+    const name = String(r.name);
+    const volume = r.volume ? String(r.volume) : "";
+    return volume && !name.toLowerCase().includes(volume.toLowerCase()) ? `${name} ${volume}` : name;
   }
 
   // Plans

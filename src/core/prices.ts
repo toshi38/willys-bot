@@ -43,7 +43,9 @@ export interface PriceVerdict {
 // "good": at least 10% under typical. "poor": above typical by 5% or more.
 export function judgePrice(store: Store, product: Product): PriceVerdict {
   const history = store.priceHistory(product.code, 365);
-  const promo = history.filter((h) => h.kind !== "regular").at(-1);
+  // Only online promotions apply to an online order; in-store prices still
+  // count towards what the product usually costs.
+  const promo = history.filter((h) => h.kind === "online-promo").at(-1);
   const today = new Date().toISOString().slice(0, 10);
   const promoToday = promo && promo.observedOn === today ? promo : null;
   const current = promoToday?.price ?? product.priceValue;
