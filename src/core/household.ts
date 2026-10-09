@@ -45,7 +45,10 @@ export const HouseholdConfig = z.object({
     secret: z.string(),
   }),
   plan: z.object({
-    dinners: z.number().int().min(0).max(14),
+    // Batch-cooked dishes per week and portions of each; a household that
+    // cooks every night uses one portion count per dinner instead.
+    meals: z.number().int().min(0).max(14),
+    portionsPerMeal: z.number().int().min(1).default(4),
     people: z.number().int().min(1),
     // Soft weekly budget the planner aims for, in SEK.
     budgetSek: z.number().positive().optional(),

@@ -22,6 +22,18 @@ export interface ListItem {
   planId: string | null;
 }
 
+export type PantryStatus = "have" | "low" | "out";
+
+export interface PantryItem {
+  id: number;
+  name: string;
+  status: PantryStatus;
+  quantity: string | null;
+  note: string | null;
+  updatedBy: string;
+  updatedAt: string;
+}
+
 export type PriceKind = "regular" | "online-promo" | "offline-promo";
 
 export interface PriceObservation {
@@ -42,6 +54,8 @@ export interface PlanLine {
   unitPrice: number;
   reason: string;
   listItemIds: number[];
+  // Pantry entry this purchase restocks, set back to "have" once ordered.
+  restocks: string | null;
 }
 
 export interface PlanRow {
@@ -123,6 +137,16 @@ export class Store {
         applied_at TEXT,
         error TEXT
       );
+      CREATE TABLE IF NOT EXISTS pantry (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        name_key TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL,
+        quantity TEXT,
+        note TEXT,
+        updated_by TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS kv (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -165,6 +189,41 @@ export class Store {
         id,
       );
     return toListItem(row);
+  }
+
+  // Pantry: what the household keeps at home, so the planner neither buys
+  // what is there nor forgets what has run out. Names are matched without
+  // regard to case or surrounding space.
+
+  pantryItems(): PantryItem[] {
+    return this.#db.prepare(`SELECT * FROM pantry ORDER BY name`).all().map(toPantryItem);
+  }
+
+  setPantryItem(item: { name: string; status: PantryStatus; quantity?: string | null; note?: string | null; updatedBy: string }): PantryItem {
+    const key = item.name.trim().toLowerCase();
+    const current = this.#db.prepare(`SELECT * FROM pantry WHERE name_key = ?`).get(key);
+    const c = current ? toPantryItem(current) : null;
+    const row = this.#db
+      .prepare(
+        `INSERT INTO pantry (name, name_key, status, quantity, note, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (name_key) DO UPDATE SET name = excluded.name, status = excluded.status, quantity = excluded.quantity,
+           note = excluded.note, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+         RETURNING *`,
+      )
+      .get(
+        item.name.trim(),
+        key,
+        item.status,
+        item.quantity !== undefined ? item.quantity : (c?.quantity ?? null),
+        item.note !== undefined ? item.note : (c?.note ?? null),
+        item.updatedBy,
+        now(),
+      );
+    return toPantryItem(row);
+  }
+
+  removePantryItem(name: string): boolean {
+    return this.#db.prepare(`DELETE FROM pantry WHERE name_key = ?`).run(name.trim().toLowerCase()).changes > 0;
   }
 
   // Products and prices
@@ -347,6 +406,19 @@ function toListItem(r: Record<string, unknown> | undefined): ListItem {
     addedAt: String(r.added_at),
     status: r.status as ListStatus,
     planId: (r.plan_id as string | null) ?? null,
+  };
+}
+
+function toPantryItem(r: Record<string, unknown> | undefined): PantryItem {
+  if (!r) throw new Error("missing row");
+  return {
+    id: Number(r.id),
+    name: String(r.name),
+    status: r.status as PantryStatus,
+    quantity: (r.quantity as string | null) ?? null,
+    note: (r.note as string | null) ?? null,
+    updatedBy: String(r.updated_by),
+    updatedAt: String(r.updated_at),
   };
 }
 

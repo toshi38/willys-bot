@@ -81,6 +81,9 @@ export async function apply(ctx: Context, plan: PlanRow, opts: { dryRun?: boolea
     const after = await willys.setCartQuantities(updates);
     const slot = await bookPickupSlot(willys, household);
     for (const id of new Set(plan.lines.flatMap((l) => l.listItemIds))) store.updateListItem(id, { status: "ordered", planId: plan.id });
+    for (const name of new Set(plan.lines.map((l) => l.restocks).filter((n): n is string => !!n))) {
+      store.setPantryItem({ name, status: "have", updatedBy: "food-bot" });
+    }
     store.updatePlan(plan.id, { status: "applied", appliedAt: new Date().toISOString() });
     const ids = JSON.parse(store.get(idsKey(plan.id)) ?? "[]") as string[];
     const sent = await sendToMembers(household, {
@@ -107,8 +110,8 @@ export function renderPlan(plan: Plan, lines: PlanLine[], unknown: string[], tok
   const out = [
     plan.summary,
     "",
-    "## Dinners",
-    ...plan.dinners.map((d) => `- **${d.day}**: ${d.dish}. ${d.why}`),
+    "## Dishes",
+    ...plan.meals.map((m) => `- **${m.dish}** (${m.portions} portions). ${m.why}`),
     "",
     `## Shopping (about ${Math.round(total)} kr)`,
     ...lines.map((l) => `- ${l.qty} x ${l.name}, ${fmt(l.unitPrice)} kr. ${l.reason}`),

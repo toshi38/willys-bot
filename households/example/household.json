@@ -19,7 +19,8 @@
     "secret": "willys-bot-example-mail"
   },
   "plan": {
-    "dinners": 5,
+    "meals": 5,
+    "portionsPerMeal": 6,
     "people": 4,
     "budgetSek": 1800,
     "language": "en"

@@ -2,9 +2,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Context } from "../core/context.ts";
 import { judgePrice, recordSearchResults } from "../core/prices.ts";
+import type { PantryStatus } from "../core/store.ts";
 
-// The household's MCP tools: the shared shopping list, product search with a
-// price verdict, offers and price history. Nothing here touches the Willys
+// The household's MCP tools: the shared shopping list, the pantry, product
+// search with a price verdict, offers and price history. Nothing here touches the Willys
 // cart or places an order; that only happens in the weekly run after an
 // approval email.
 
@@ -21,6 +22,7 @@ export function buildServer(ctx: Context, member: string, { readOnly = false } =
       instructions: `Shared grocery list and Willys price lookup for ${household.config.name}. You are talking to ${member}.
 Items added here are bought in the next weekly Willys order, which a household member approves by email.
 When someone asks for something, search for matching products, compare the options on price per unit and the price verdict, and suggest one, but let them choose when it is a matter of taste.
+The pantry is what the household keeps at home. The weekly planner never buys pantry items marked "have" and restocks ones marked "low" or "out". When someone says they used up or are running low on something, update the pantry with pantry_set rather than the shopping list, unless they need it this week.
 If they share a photo of a handwritten list, read it, tell them what you read (flag words you are unsure of), and add the items with list_add once they confirm.
 Prices are in SEK. Verdicts compare today's price with what this household has seen before: "great" and "good" are worth stocking up on.`,
     },
@@ -71,6 +73,39 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
     "list_remove",
     { description: "Remove an item from the list.", inputSchema: { id: z.number().int() } },
     async ({ id }) => text(store.updateListItem(id, { status: "removed" }) ?? `No item #${id}`),
+  );
+
+  server.registerTool(
+    "pantry_view",
+    { description: "Show the pantry: what the household has at home, and what is low or out.", inputSchema: {} },
+    async () => text(store.pantryItems()),
+  );
+
+  if (!readOnly) server.registerTool(
+    "pantry_set",
+    {
+      description:
+        "Add or update pantry entries. status is \"have\", \"low\" or \"out\". Use short generic names (\"jasmine rice\", \"Pearl River Bridge mushroom soy\") so later updates match.",
+      inputSchema: {
+        items: z
+          .array(
+            z.object({
+              name: z.string().min(1),
+              status: z.enum(["have", "low", "out"]),
+              quantity: z.string().optional(),
+              note: z.string().optional(),
+            }),
+          )
+          .min(1),
+      },
+    },
+    async ({ items }) => text(items.map((i) => store.setPantryItem({ ...i, status: i.status as PantryStatus, updatedBy: member }))),
+  );
+
+  if (!readOnly) server.registerTool(
+    "pantry_remove",
+    { description: "Stop tracking a pantry entry.", inputSchema: { name: z.string().min(1) } },
+    async ({ name }) => text(store.removePantryItem(name) ? `Removed ${name}` : `No pantry entry ${name}`),
   );
 
   server.registerTool(

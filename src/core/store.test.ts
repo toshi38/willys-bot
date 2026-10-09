@@ -36,3 +36,14 @@ test("list items move from open to ordered", () => {
   store.updateListItem(item.id, { status: "ordered", planId: "p1" });
   assert.equal(store.listItems().length, 0);
 });
+
+test("pantry entries match by name regardless of case and keep their details", () => {
+  const store = new Store(":memory:");
+  store.setPantryItem({ name: "Jasmine rice", status: "have", quantity: "2 kg", updatedBy: "Carin" });
+  const updated = store.setPantryItem({ name: " jasmine RICE ", status: "low", updatedBy: "Stephen" });
+  assert.equal(store.pantryItems().length, 1);
+  assert.equal(updated.status, "low");
+  assert.equal(updated.quantity, "2 kg");
+  assert.equal(store.removePantryItem("Jasmine Rice"), true);
+  assert.deepEqual(store.pantryItems(), []);
+});

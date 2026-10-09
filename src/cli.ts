@@ -12,6 +12,9 @@ const USAGE = `Usage: npm run wb -- <command> [--household <id>]
   list                    show the open shopping list
   list add <text...>      add an item (--qty, --note)
   list remove <id>        remove an item
+  pantry                  show the pantry
+  pantry set <name...>    add or update a pantry entry (--status have|low|out, --qty, --note)
+  pantry remove <name...> stop tracking a pantry entry
   cart                    show the Willys cart
   slots                   show pickup slots for the household's store
   get <path>              GET a willys.se API path and print the JSON (exploration)
@@ -29,6 +32,7 @@ async function main(): Promise<void> {
       note: { type: "string" },
       limit: { type: "string" },
       "dry-run": { type: "boolean" },
+      status: { type: "string" },
       feedback: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
@@ -81,6 +85,21 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
         console.log(item ? `Removed #${item.id} ${item.text}` : "No such item");
       } else {
         for (const i of store.listItems()) console.log(`#${i.id} ${i.text}${i.quantity ? ` x ${i.quantity}` : ""}${i.note ? ` (${i.note})` : ""} [${i.addedBy}]`);
+      }
+      return;
+    }
+    case "pantry": {
+      const [sub, ...args] = rest;
+      const name = args.join(" ");
+      if (sub === "set") {
+        const status = (values.status as string | undefined) ?? "have";
+        if (!["have", "low", "out"].includes(status)) throw new Error("--status must be have, low or out");
+        const item = store.setPantryItem({ name, status: status as "have" | "low" | "out", quantity: values.qty as string | undefined, note: values.note as string | undefined, updatedBy: "cli" });
+        console.log(`${item.name}: ${item.status}`);
+      } else if (sub === "remove") {
+        console.log(store.removePantryItem(name) ? `Removed ${name}` : `No pantry entry ${name}`);
+      } else {
+        for (const p of store.pantryItems()) console.log(`${p.name}: ${p.status}${p.quantity ? `, ${p.quantity}` : ""}${p.note ? ` (${p.note})` : ""}`);
       }
       return;
     }
