@@ -1,0 +1,8 @@
+node_modules/
+.env
+data/
+
+# Real households hold names, addresses, emails and eating habits: never
+# committed. Only the example household is tracked.
+households/*
+!households/example/

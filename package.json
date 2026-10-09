@@ -1,0 +1,28 @@
+{
+  "name": "willys-bot",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "node --no-warnings=ExperimentalWarning --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc",
+    "wb": "node --no-warnings=ExperimentalWarning src/cli.ts",
+    "mcp": "node --no-warnings=ExperimentalWarning src/mcp/server.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "imapflow": "^2.3.0",
+    "mailparser": "^3.9.37",
+    "marked": "^18.1.0",
+    "nodemailer": "^10.0.16",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/mailparser": "^3.9.0",
+    "@types/node": "^26.6.4",
+    "@types/nodemailer": "^8.0.2",
+    "typescript": "^7.0.2"
+  }
+}

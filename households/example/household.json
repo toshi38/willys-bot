@@ -1,0 +1,27 @@
+{
+  "name": "Example household",
+  "willys": {
+    "storeId": "2299",
+    "secret": "willys-bot-example-willys"
+  },
+  "pickup": {
+    "weekdays": ["mon", "tue", "wed", "thu"],
+    "earliest": "17:00",
+    "latest": "20:00"
+  },
+  "members": [
+    { "name": "Alex", "email": "alex@example.com" },
+    { "name": "Sam", "email": "sam@example.com" }
+  ],
+  "mail": {
+    "user": "alex@example.com",
+    "from": "Willys bot <alex@example.com>",
+    "secret": "willys-bot-example-mail"
+  },
+  "plan": {
+    "dinners": 5,
+    "people": 4,
+    "budgetSek": 1800,
+    "language": "en"
+  }
+}
