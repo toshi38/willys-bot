@@ -36,6 +36,9 @@ export const HouseholdConfig = z.object({
     smtpPort: z.number().int().default(465),
     imapHost: z.string().default("imap.gmail.com"),
     imapPort: z.number().int().default(993),
+    // The authserv-id the mailbox's own server writes in
+    // Authentication-Results; only its verdicts on replies are trusted.
+    trustedAuthservId: z.string().default("mx.google.com"),
     user: z.string(),
     from: z.string(),
     // Keychain service or systemd credential name holding the app password.

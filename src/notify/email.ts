@@ -10,7 +10,7 @@ import { readSecret } from "../core/secrets.ts";
 // Plan emails go to every household member over SMTP. Replies are read over
 // IMAP from the same mailbox. A reply only counts when it answers a message
 // this bot sent (its Message-ID is in In-Reply-To or References), comes from
-// a member, and passes the receiving server's DMARC or DKIM check.
+// a member, and is authenticated (see senderAuthenticated).
 
 export interface OutgoingEmail {
   subject: string;
@@ -73,7 +73,7 @@ export async function fetchReplies(household: Household, sentIds: string[], sinc
     try {
       const uids = await client.search({ since }, { uid: true });
       if (!uids || !uids.length) return [];
-      for await (const msg of client.fetch(uids, { source: true }, { uid: true })) {
+      for await (const msg of client.fetch(uids, { source: true, labels: true }, { uid: true })) {
         if (!msg.source) continue;
         const parsed = await simpleParser(msg.source);
         const refs = [parsed.inReplyTo ?? "", ...(Array.isArray(parsed.references) ? parsed.references : [parsed.references ?? ""])];
@@ -81,7 +81,8 @@ export async function fetchReplies(household: Household, sentIds: string[], sinc
         if (parsed.messageId && sentIds.includes(parsed.messageId)) continue;
         const from = parsed.from?.value[0]?.address ?? "";
         if (!isMember(household, from)) continue;
-        if (!authenticated(parsed.headers.get("authentication-results"), from, mail.user)) continue;
+        const sentByMailbox = [...(msg.labels ?? [])].includes("\\Sent") && from.toLowerCase() === mail.user.toLowerCase();
+        if (!senderAuthenticated(msg.source.toString("utf8"), from, mail.trustedAuthservId, sentByMailbox)) continue;
         replies.push({
           from,
           date: parsed.date ?? new Date(0),
@@ -98,13 +99,41 @@ export async function fetchReplies(household: Household, sentIds: string[], sinc
   return replies.sort((a, b) => a.date.getTime() - b.date.getTime());
 }
 
-// Mail from outside the account carries Authentication-Results from the
-// receiving server; require a DMARC or DKIM pass there. Mail sent from the
-// mailbox's own account has no such header and is trusted as is.
-function authenticated(header: unknown, from: string, mailboxUser: string): boolean {
-  const value = Array.isArray(header) ? header.join("\n") : typeof header === "string" ? header : header ? JSON.stringify(header) : "";
-  if (!value) return from.toLowerCase() === mailboxUser.toLowerCase();
-  return /dmarc=pass/i.test(value) || /dkim=pass/i.test(value);
+// A reply is trusted when the receiving server vouches for its sender:
+// the topmost Authentication-Results header (added by our own mail server,
+// above anything the sender could inject) must come from the trusted
+// authserv-id and show DMARC passing for the From domain, or DKIM passing
+// with a signing domain aligned to it. Mail the mailbox account sent itself
+// carries no such header; it is trusted only when the server files it as
+// sent by that account.
+export function senderAuthenticated(rawMessage: string, from: string, trustedAuthservId: string, sentByMailbox: boolean): boolean {
+  const ar = topHeader(rawMessage, "authentication-results");
+  if (!ar) return sentByMailbox;
+  const [authserv, ...rest] = ar.split(";");
+  if (authserv.trim().toLowerCase() !== trustedAuthservId.toLowerCase()) return false;
+  const fromDomain = from.split("@")[1]?.toLowerCase() ?? "";
+  if (!fromDomain) return false;
+  const aligned = (d: string | undefined) => !!d && (d.toLowerCase() === fromDomain || fromDomain.endsWith(`.${d.toLowerCase()}`));
+  for (const clause of rest) {
+    const c = clause.trim();
+    if (/^dmarc=pass\b/i.test(c) && aligned(c.match(/header\.from=([^\s;]+)/i)?.[1])) return true;
+    if (/^dkim=pass\b/i.test(c) && aligned(c.match(/header\.d=([^\s;]+)/i)?.[1] ?? c.match(/header\.i=@?([^\s;]+)/i)?.[1]?.split("@").pop())) return true;
+  }
+  return false;
+}
+
+// The first occurrence of a header in a raw message, unfolded.
+function topHeader(raw: string, name: string): string | null {
+  const head = raw.split(/\r?\n\r?\n/, 1)[0];
+  const lines = head.split(/\r?\n/);
+  const prefix = `${name.toLowerCase()}:`;
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].toLowerCase().startsWith(prefix)) continue;
+    let value = lines[i].slice(prefix.length);
+    while (i + 1 < lines.length && /^[ \t]/.test(lines[i + 1])) value += ` ${lines[++i].trim()}`;
+    return value.replace(/\s+/g, " ").trim();
+  }
+  return null;
 }
 
 export function stripQuoted(text: string): string {
