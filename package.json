@@ -9,7 +9,8 @@
     "test": "node --no-warnings=ExperimentalWarning --test \"src/**/*.test.ts\"",
     "typecheck": "tsc",
     "wb": "node --no-warnings=ExperimentalWarning src/cli.ts",
-    "mcp": "node --no-warnings=ExperimentalWarning src/mcp/server.ts"
+    "mcp": "node --no-warnings=ExperimentalWarning src/mcp/server.ts",
+    "web": "node --no-warnings=ExperimentalWarning src/web/server.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

@@ -13,6 +13,9 @@ const Weekday = z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
 const Person = z.object({
   name: z.string(),
   email: z.string().email(),
+  // Tailscale login names that identify this person in the web UI, when
+  // they differ from the email address.
+  tailscale: z.array(z.string()).default([]),
 });
 
 export const HouseholdConfig = z.object({
@@ -89,4 +92,11 @@ export function householdId(flag: string | undefined): string {
 export function isMember(household: Household, email: string): boolean {
   const e = email.trim().toLowerCase();
   return household.config.members.some((m) => m.email.toLowerCase() === e);
+}
+
+// The member a Tailscale login belongs to, matched on email or any listed
+// Tailscale login.
+export function memberByLogin(household: Household, login: string): HouseholdConfig["members"][number] | null {
+  const l = login.trim().toLowerCase();
+  return household.config.members.find((m) => m.email.toLowerCase() === l || m.tailscale.some((t) => t.toLowerCase() === l)) ?? null;
 }

@@ -1,7 +1,7 @@
 import type { Context } from "../core/context.ts";
 import { snapshotCampaigns } from "../core/prices.ts";
 import type { PlanLine, PlanRow } from "../core/store.ts";
-import { classifyReply, fetchReplies, sendToMembers } from "../notify/email.ts";
+import { classifyReply, fetchReplies, sendToMembers, type Decision } from "../notify/email.ts";
 import { makePlan, planLines, type Plan } from "./planner.ts";
 import { bookPickupSlot } from "./slots.ts";
 
@@ -46,22 +46,27 @@ export async function poll(ctx: Context, opts: { dryRun?: boolean } = {}): Promi
     const replies = await fetchReplies(household, sentIds, new Date(plan.sentAt ?? plan.createdAt));
     const reply = replies[0];
     if (!reply) continue;
-    const decision = classifyReply(reply.text);
-    const decidedAt = new Date().toISOString();
-    if (decision.kind === "approve") {
-      store.updatePlan(plan.id, { status: "approved", decidedBy: reply.from, decidedAt });
-      log.push(`${plan.id}: approved by ${reply.from}`);
-      log.push(await apply(ctx, store.plan(plan.id)!, { dryRun: opts.dryRun, replyTo: reply.messageId }));
-    } else if (decision.kind === "reject") {
-      store.updatePlan(plan.id, { status: "rejected", decidedBy: reply.from, decidedAt, decisionNote: reply.text });
-      log.push(`${plan.id}: rejected by ${reply.from}`);
-    } else {
-      store.updatePlan(plan.id, { status: "rejected", decidedBy: reply.from, decidedAt, decisionNote: reply.text });
-      const next = await propose(ctx, { feedback: decision.feedback, replyTo: reply.messageId, dryRun: opts.dryRun });
-      log.push(`${plan.id}: changes requested by ${reply.from}, sent revised plan ${next.id}`);
-    }
+    log.push(...(await decide(ctx, plan, classifyReply(reply.text), reply.from, { replyTo: reply.messageId, dryRun: opts.dryRun })));
   }
   return log;
+}
+
+// Acts on a member's decision about a sent plan, whether it came from an
+// email reply or the web UI.
+export async function decide(ctx: Context, plan: PlanRow, decision: Decision, by: string, opts: { replyTo?: string; dryRun?: boolean } = {}): Promise<string[]> {
+  const { store } = ctx;
+  if (plan.status !== "sent") throw new Error(`Plan ${plan.id} is ${plan.status}, not waiting for a decision`);
+  const decidedAt = new Date().toISOString();
+  if (decision.kind === "approve") {
+    store.updatePlan(plan.id, { status: "approved", decidedBy: by, decidedAt });
+    return [`${plan.id}: approved by ${by}`, await apply(ctx, store.plan(plan.id)!, opts)];
+  }
+  const note = decision.kind === "change" ? decision.feedback : "rejected";
+  store.updatePlan(plan.id, { status: "rejected", decidedBy: by, decidedAt, decisionNote: note });
+  if (decision.kind === "reject") return [`${plan.id}: rejected by ${by}`];
+  const replyTo = opts.replyTo ?? (JSON.parse(store.get(idsKey(plan.id)) ?? "[]") as string[]).at(-1);
+  const next = await propose(ctx, { feedback: decision.feedback, replyTo, dryRun: opts.dryRun });
+  return [`${plan.id}: changes requested by ${by}, sent revised plan ${next.id}`];
 }
 
 // Fills the cart with the plan's lines on top of whatever is already in it,
