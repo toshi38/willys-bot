@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Context } from "../core/context.ts";
 import { judgePrice, recordSearchResults } from "../core/prices.ts";
+import { savePreferences } from "../core/household.ts";
 import type { PantryStatus } from "../core/store.ts";
 
 // The household's MCP tools: the shared shopping list, the pantry, product
@@ -12,6 +13,8 @@ import type { PantryStatus } from "../core/store.ts";
 const text = (value: unknown) => ({
   content: [{ type: "text" as const, text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }],
 });
+
+const PREFERENCES_HISTORY = "preferences.history";
 
 // readOnly leaves out the list-changing tools, for the weekly planner.
 export function buildServer(ctx: Context, member: string, { readOnly = false } = {}): McpServer {
@@ -106,6 +109,28 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
     "pantry_remove",
     { description: "Stop tracking a pantry entry.", inputSchema: { name: z.string().min(1) } },
     async ({ name }) => text(store.removePantryItem(name) ? `Removed ${name}` : `No pantry entry ${name}`),
+  );
+
+  server.registerTool(
+    "preferences_view",
+    { description: "Show the household's food preferences: dietary rules, tastes, staples and shopping habits. The weekly planner follows them.", inputSchema: {} },
+    async () => text(household.preferences || "(none written yet)"),
+  );
+
+  if (!readOnly) server.registerTool(
+    "preferences_update",
+    {
+      description:
+        "Replace the household's preferences (Markdown) with an edited version. Read them with preferences_view first, keep everything that still holds, and change only what the person asked for. The previous version is kept.",
+      inputSchema: { markdown: z.string().min(1), change: z.string().min(1).describe("One line on what changed and who asked") },
+    },
+    async ({ markdown, change }) => {
+      const history = JSON.parse(store.get(PREFERENCES_HISTORY) ?? "[]") as { at: string; by: string; change: string; previous: string }[];
+      history.unshift({ at: new Date().toISOString(), by: member, change, previous: household.preferences });
+      store.set(PREFERENCES_HISTORY, JSON.stringify(history.slice(0, 20)));
+      savePreferences(household, markdown);
+      return text(`Saved. ${change}`);
+    },
   );
 
   server.registerTool(

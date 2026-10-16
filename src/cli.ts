@@ -2,7 +2,8 @@ import { parseArgs } from "node:util";
 import { openContext, type Context } from "./core/context.ts";
 import { householdId } from "./core/household.ts";
 import { judgePrice, recordSearchResults, snapshotCampaigns } from "./core/prices.ts";
-import { apply, poll, propose } from "./plan/weekly.ts";
+import { handleInbox } from "./plan/inbox.ts";
+import { apply, propose } from "./plan/weekly.ts";
 
 const USAGE = `Usage: npm run wb -- <command> [--household <id>]
 
@@ -19,7 +20,7 @@ const USAGE = `Usage: npm run wb -- <command> [--household <id>]
   slots                   show pickup slots for the household's store
   get <path>              GET a willys.se API path and print the JSON (exploration)
   plan [--dry-run]        make this week's plan and email it to the members (--dry-run prints it)
-  poll [--dry-run]        act on replies to sent plans
+  inbox [--dry-run]       act on new email to the bot (--dry-run lists it without acting)
   apply <plan-id>         fill the cart and book a slot for a plan without waiting for a reply
   plans                   list recent plans and their status`;
 
@@ -127,8 +128,8 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
       console.log(`Plan ${row.id} ${values["dry-run"] ? "drafted" : "sent"}`);
       return;
     }
-    case "poll": {
-      for (const line of await poll(ctx, { dryRun: values["dry-run"] === true })) console.log(line);
+    case "inbox": {
+      for (const line of await handleInbox(ctx, { dryRun: values["dry-run"] === true })) console.log(line);
       return;
     }
     case "apply": {

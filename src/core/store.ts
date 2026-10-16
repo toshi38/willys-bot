@@ -45,6 +45,20 @@ export interface PriceObservation {
   label: string | null;
 }
 
+export type MailStatus = "handled" | "ignored" | "retry" | "failed";
+
+export interface MailRecord {
+  // Resend's id for the received email.
+  id: string;
+  receivedAt: string;
+  sender: string;
+  subject: string;
+  status: MailStatus;
+  attempts: number;
+  note: string | null;
+  updatedAt: string;
+}
+
 export type PlanStatus = "draft" | "sent" | "approved" | "rejected" | "applied" | "failed";
 
 export interface PlanLine {
@@ -145,6 +159,16 @@ export class Store {
         quantity TEXT,
         note TEXT,
         updated_by TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mail (
+        id TEXT PRIMARY KEY,
+        received_at TEXT NOT NULL,
+        sender TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        status TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        note TEXT,
         updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS kv (
@@ -360,7 +384,24 @@ export class Store {
     }
   }
 
-  // Small key/value state: the saved Willys session, the IMAP cursor.
+  // Received email: one row per email to the bot that was looked at, so
+  // nothing is acted on twice. "retry" rows are tried again on the next run.
+
+  mailRecord(id: string): MailRecord | null {
+    const r = this.#db.prepare(`SELECT * FROM mail WHERE id = ?`).get(id);
+    return r ? toMail(r) : null;
+  }
+
+  recordMail(m: Omit<MailRecord, "updatedAt">): void {
+    this.#db
+      .prepare(
+        `INSERT INTO mail (id, received_at, sender, subject, status, attempts, note, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET status = excluded.status, attempts = excluded.attempts, note = excluded.note, updated_at = excluded.updated_at`,
+      )
+      .run(m.id, m.receivedAt, m.sender, m.subject, m.status, m.attempts, m.note, now());
+  }
+
+  // Small key/value state: the saved Willys session, the inbox start date.
 
   get(key: string): string | null {
     const r = this.#db.prepare(`SELECT value FROM kv WHERE key = ?`).get(key);
@@ -418,6 +459,19 @@ function toPantryItem(r: Record<string, unknown> | undefined): PantryItem {
     quantity: (r.quantity as string | null) ?? null,
     note: (r.note as string | null) ?? null,
     updatedBy: String(r.updated_by),
+    updatedAt: String(r.updated_at),
+  };
+}
+
+function toMail(r: Record<string, unknown>): MailRecord {
+  return {
+    id: String(r.id),
+    receivedAt: String(r.received_at),
+    sender: String(r.sender),
+    subject: String(r.subject),
+    status: r.status as MailStatus,
+    attempts: Number(r.attempts),
+    note: (r.note as string | null) ?? null,
     updatedAt: String(r.updated_at),
   };
 }

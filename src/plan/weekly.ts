@@ -1,14 +1,15 @@
 import type { Context } from "../core/context.ts";
 import { snapshotCampaigns } from "../core/prices.ts";
 import type { PlanLine, PlanRow } from "../core/store.ts";
-import { classifyReply, fetchReplies, sendToMembers, type Decision } from "../notify/email.ts";
+import { sendToMembers, type Decision } from "../notify/email.ts";
 import { makePlan, planLines, type Plan } from "./planner.ts";
 import { bookPickupSlot } from "./slots.ts";
 
-// The weekly cycle: propose a plan and email it, then poll for a member's
-// reply. "yes" fills the Willys cart and books a pickup slot; anything other
-// than yes or no is fed back to the planner and a revised plan is sent in
-// the same thread. Placing the order stays a manual step on willys.se.
+// The weekly cycle: propose a plan and email it, then act on a member's
+// decision (an email reply, see inbox.ts, or the web UI). Approval fills the
+// Willys cart and books a pickup slot; a change request is fed back to the
+// planner and a revised plan is sent in the same thread. Placing the order
+// stays a manual step on willys.se.
 
 const idsKey = (planId: string) => `plan.${planId}.messageIds`;
 
@@ -35,20 +36,6 @@ export async function propose(ctx: Context, opts: { feedback?: string; replyTo?:
   store.set(idsKey(row.id), JSON.stringify([messageId]));
   store.updatePlan(row.id, { status: "sent", sentAt: new Date().toISOString() });
   return store.plan(row.id)!;
-}
-
-// Checks every sent plan for replies and acts on the first decisive one.
-export async function poll(ctx: Context, opts: { dryRun?: boolean } = {}): Promise<string[]> {
-  const { store, household } = ctx;
-  const log: string[] = [];
-  for (const plan of store.plans(["sent"])) {
-    const sentIds = JSON.parse(store.get(idsKey(plan.id)) ?? "[]") as string[];
-    const replies = await fetchReplies(household, sentIds, new Date(plan.sentAt ?? plan.createdAt));
-    const reply = replies[0];
-    if (!reply) continue;
-    log.push(...(await decide(ctx, plan, classifyReply(reply.text), reply.from, { replyTo: reply.messageId, dryRun: opts.dryRun })));
-  }
-  return log;
 }
 
 // Acts on a member's decision about a sent plan, whether it came from an
@@ -127,7 +114,7 @@ export function renderPlan(plan: Plan, lines: PlanLine[], unknown: string[], tok
   out.push(
     "",
     "---",
-    "Reply **yes** to fill the cart and book a pickup slot, **no** to skip this week, or write what to change and a new plan will follow.",
+    "Reply **yes** to fill the cart and book a pickup slot, **no** to skip this week, or write what to change and a new plan will follow. You can also email me any time to add to the list or update the pantry or your preferences.",
     `(plan ${token})`,
   );
   return out.join("\n");

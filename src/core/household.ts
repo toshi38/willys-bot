@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 
@@ -35,16 +35,13 @@ export const HouseholdConfig = z.object({
   // accepted from these addresses.
   members: z.array(Person).min(1),
   mail: z.object({
-    smtpHost: z.string().default("smtp.gmail.com"),
-    smtpPort: z.number().int().default(465),
-    imapHost: z.string().default("imap.gmail.com"),
-    imapPort: z.number().int().default(993),
-    // The authserv-id the mailbox's own server writes in
-    // Authentication-Results; only its verdicts on replies are trusted.
-    trustedAuthservId: z.string().default("mx.google.com"),
-    user: z.string(),
-    from: z.string(),
-    // Keychain service or systemd credential name holding the app password.
+    // The bot's own address, on a domain Resend sends and receives for.
+    // Plans go out from it and members write to it.
+    address: z.string().email(),
+    name: z.string().default("food-bot"),
+    // Keychain service (Mac) or systemd credential prefix (XPS) holding the
+    // Resend API key as account "key". The key needs full access: reading
+    // received email is not part of a sending-only key.
     secret: z.string(),
   }),
   plan: z.object({
@@ -80,6 +77,12 @@ export function loadHousehold(id: string): Household {
   const prefPath = join(dir, "preferences.md");
   const preferences = existsSync(prefPath) ? readFileSync(prefPath, "utf8") : "";
   return { id, dir, config, preferences };
+}
+
+// Replaces preferences.md, for changes members ask for by email.
+export function savePreferences(household: Household, markdown: string): void {
+  writeFileSync(join(household.dir, "preferences.md"), markdown.endsWith("\n") ? markdown : `${markdown}\n`);
+  household.preferences = markdown;
 }
 
 // The household to act on: --household flag, then WILLYS_BOT_HOUSEHOLD.
