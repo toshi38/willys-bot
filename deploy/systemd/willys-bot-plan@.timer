@@ -1,0 +1,9 @@
+[Unit]
+Description=food-bot: weekly plan on Wednesday morning (%i)
+
+[Timer]
+OnCalendar=Wed 07:00 Europe/Stockholm
+Persistent=true
+
+[Install]
+WantedBy=timers.target

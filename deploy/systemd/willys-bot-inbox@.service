@@ -1,0 +1,18 @@
+[Unit]
+Description=food-bot: act on new email to the bot (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+UMask=0077
+WorkingDirectory=%h/code/willys-bot
+Environment=WILLYS_BOT_HOUSEHOLD=%i
+Environment=WILLYS_BOT_DATA=%h/.local/state/willys-bot
+Environment=WILLYS_BOT_HOUSEHOLDS=%h/.config/willys-bot/households
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+LoadCredentialEncrypted=willys-bot-resend-key:%h/.config/credstore.encrypted/willys-bot-resend-key
+LoadCredentialEncrypted=willys-bot-willys-username:%h/.config/credstore.encrypted/willys-bot-willys-username
+LoadCredentialEncrypted=willys-bot-willys-password:%h/.config/credstore.encrypted/willys-bot-willys-password
+ExecStart=/usr/bin/node --no-warnings=ExperimentalWarning src/cli.ts inbox
+TimeoutStartSec=1800
