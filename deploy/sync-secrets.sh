@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Copies food-bot's secrets to hermes, where each is encrypted as a machine-bound systemd
 # credential. Run from the Mac after creating or rotating one.
-#   Resend API key (full access, for sending and reading received mail): from Infisical,
-#     read with your own Infisical login.
+#   Resend API key (full access, for sending and reading received mail): from Infisical
+#     (project Food Bot, prod, RESEND_API_KEY), read with your own Infisical login.
 #   Willys login: from the Mac's Keychain (service willys-bot-willys, accounts username and password).
 set -euo pipefail
 
 host="${HERMES_HOST:-hermes}"
-project="${INFISICAL_PROJECT_ID:?set INFISICAL_PROJECT_ID to the Infisical project holding the Resend key}"
+project="${INFISICAL_PROJECT_ID:-b83a832f-b552-48c8-bfa2-f4cb0f0878d9}" # Food Bot, in Lau Engineering AB
 env="${INFISICAL_ENV:-prod}"
 secret="${INFISICAL_SECRET:-RESEND_API_KEY}"
 
