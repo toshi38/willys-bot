@@ -21,6 +21,16 @@ From domain) is acted on. Everything else is recorded and ignored without a repl
 The Resend API key needs full access: a sending-only key cannot read received mail. The domain
 needs Resend's receiving MX record in addition to the sending records.
 
+## Slack
+
+With `"slack": {"bot": "food"}` in `household.json` and
+slack-gateway (its own repo) running on the same machine, every plan is also posted to
+food-bot's Slack channel with **Approve** and **Skip this week** buttons, and its post shows the
+outcome however the plan was decided. A message in the channel works like an email to the bot: a
+plain yes or no in a plan's thread decides it, anything else goes to the same Claude agent. The
+gateway runs `deploy/run.sh <household> slack` for each message or click. When the gateway is
+not running, nothing is posted and email carries on as usual.
+
 ## Running on hermes
 
 Timers per household (`deploy/systemd/`): offer snapshot daily at 06:30, inbox every five

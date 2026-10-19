@@ -101,9 +101,7 @@ async function handleEmail(ctx: Context, email: ReceivedEmail, name: string, fro
     if (decision.kind !== "change") return decide(ctx, waiting, decision, from, { replyTo: email.message_id });
   }
 
-  const outcome = await runIntake(ctx, name, email.subject ?? "", text, plan);
-  // The tools ran in another process; a revised plan must see their edits.
-  household.preferences = loadHousehold(household.id).preferences;
+  const outcome = await runIntake(ctx, { name, via: "email", subject: email.subject ?? "", text, plan, thread: [] });
   const log = [`${email.id} from ${name}: ${outcome.summary}`];
   if (outcome.reply) {
     await sendToMembers(household, { subject: reSubject(email.subject), markdown: outcome.reply, inReplyTo: email.message_id });
@@ -115,7 +113,7 @@ async function handleEmail(ctx: Context, email: ReceivedEmail, name: string, fro
   return log;
 }
 
-const IntakeOutput = z.object({
+export const IntakeOutput = z.object({
   reply: z.string().default(""),
   planFeedback: z.string().default(""),
   summary: z.string().default("handled"),
@@ -124,36 +122,56 @@ const IntakeOutput = z.object({
 const INTAKE_SCHEMA = {
   type: "object",
   properties: {
-    reply: { type: "string", description: "Email to the household saying what you changed, or answering the question. Empty if a revised plan is all the answer needed." },
+    reply: { type: "string", description: "Your answer to the household saying what you changed, or answering the question. Empty if a revised plan is all the answer needed." },
     planFeedback: { type: "string", description: "Instructions for the planner when the person wants this week's plan changed or asks for a new plan; otherwise empty." },
     summary: { type: "string", description: "One line for the operator's log." },
   },
   required: ["reply", "planFeedback", "summary"],
 };
 
-const SYSTEM_PROMPT = `You are food-bot, the email assistant for a household's weekly grocery shop at Willys, a Swedish supermarket. A household member has emailed you. Do what they ask with your tools, then write a short, friendly reply.
+const SYSTEM_PROMPT = `You are food-bot, the assistant for a household's weekly grocery shop at Willys, a Swedish supermarket. A household member has written to you, by email or in Slack. Do what they ask with your tools, then write a short, friendly reply.
 
 What you can change:
 - The shopping list (list_add, list_update, list_remove): things to buy in the next order. Use search_products when they name a specific product.
 - The pantry (pantry_set, pantry_remove): what they keep at home. "We are out of X" or "running low on Y" belongs here unless they need it this week.
-- The preferences (preferences_view, then preferences_update): dietary rules, likes and dislikes, staples, budget and habits. Keep everything that still holds and change only what they told you. Celiac and allergy rules can be tightened from an email but never loosened without the person saying so plainly.
-- This week's plan: you cannot edit it. If they want it changed, or ask for a new plan, put precise instructions for the planner in planFeedback and a revised plan will be emailed. Approving or rejecting a plan is done by replying yes or no to the plan email; if they seem to want that, tell them so.
+- The preferences (preferences_view, then preferences_update): dietary rules, likes and dislikes, staples, budget and habits. Keep everything that still holds and change only what they told you. Celiac and allergy rules can be tightened from a message but never loosened without the person saying so plainly.
+- This week's plan: you cannot edit it. If they want it changed, or ask for a new plan, put precise instructions for the planner in planFeedback and a revised plan will be sent. Approving or skipping a plan is done by replying yes or no to the plan email, or with the Approve and Skip buttons on the plan in Slack; if they seem to want that, tell them so.
 
 Rules:
-- Only act on what the email asks. If something is ambiguous, do the safe part and ask about the rest in your reply.
+- Only act on what the message asks. If something is ambiguous, do the safe part and ask about the rest in your reply.
 - Your reply goes to every household member. Say concretely what you changed. Keep it short.
 - Write in the language the person wrote in. Never use em dashes or en dashes; use commas, colons or full stops.`;
 
-async function runIntake(ctx: Context, name: string, subject: string, text: string, plan: PlanRow | null): Promise<z.infer<typeof IntakeOutput>> {
-  const lines = [`From: ${name}`, `Subject: ${subject}`, `Today is ${new Date().toISOString().slice(0, 10)}.`];
+export interface IntakeInput {
+  name: string;
+  via: "email" | "slack";
+  // The email subject; empty for Slack.
+  subject: string;
+  text: string;
+  // The plan the message answers, when it answers one.
+  plan: PlanRow | null;
+  // Earlier messages in the Slack thread, oldest first.
+  thread: { from: string; text: string }[];
+}
+
+// Hands a member's message to Claude with the list, pantry and
+// preferences tools. The household's preferences are reloaded afterwards,
+// since the tools edit them in another process and a revised plan must see
+// the change.
+export async function runIntake(ctx: Context, input: IntakeInput): Promise<z.infer<typeof IntakeOutput>> {
+  const lines = [`From: ${input.name}, by ${input.via === "email" ? "email" : "Slack"}`];
+  if (input.subject) lines.push(`Subject: ${input.subject}`);
+  lines.push(`Today is ${new Date().toISOString().slice(0, 10)}.`);
+  const plan = input.plan;
   if (plan) {
     lines.push(
       "",
-      `This email answers plan ${plan.id}, which is ${plan.status}${plan.status === "sent" ? " (waiting for a decision)" : ""}. Its shopping lines:`,
+      `This message answers plan ${plan.id}, which is ${plan.status}${plan.status === "sent" ? " (waiting for a decision)" : ""}. Its shopping lines:`,
       ...plan.lines.map((l) => `- ${l.qty} x ${l.name}`),
     );
   }
-  lines.push("", "## Email", text || "(empty)");
+  if (input.thread.length) lines.push("", "## Earlier in the thread", ...input.thread.map((m) => `${m.from}: ${m.text}`));
+  lines.push("", "## Message", input.text || "(empty)");
   const output = await runClaude(ctx, {
     systemPrompt: SYSTEM_PROMPT,
     prompt: lines.join("\n"),
@@ -164,9 +182,10 @@ async function runIntake(ctx: Context, name: string, subject: string, text: stri
       "preferences_view", "preferences_update",
       "search_products", "current_offers",
     ],
-    member: name,
+    member: input.name,
     readOnly: false,
   });
+  ctx.household.preferences = loadHousehold(ctx.household.id).preferences;
   return IntakeOutput.parse(output);
 }
 

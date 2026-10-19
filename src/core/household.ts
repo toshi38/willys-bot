@@ -44,6 +44,10 @@ export const HouseholdConfig = z.object({
     // received email is not part of a sending-only key.
     secret: z.string(),
   }),
+  // Set when the household also uses Slack through slack-gateway: plans are
+  // posted there with Approve and Skip buttons, and the bot's channel works
+  // like its email address. `bot` is the gateway's id for food-bot.
+  slack: z.object({ bot: z.string().default("food") }).optional(),
   plan: z.object({
     // Batch-cooked dishes per week and portions of each; a household that
     // cooks every night uses one portion count per dinner instead.

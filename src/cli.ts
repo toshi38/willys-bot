@@ -3,6 +3,7 @@ import { openContext, type Context } from "./core/context.ts";
 import { householdId } from "./core/household.ts";
 import { judgePrice, recordSearchResults, snapshotCampaigns } from "./core/prices.ts";
 import { handleInbox } from "./plan/inbox.ts";
+import { handleSlack, type SlackRequest } from "./plan/slack.ts";
 import { apply, propose } from "./plan/weekly.ts";
 
 const USAGE = `Usage: npm run wb -- <command> [--household <id>]
@@ -21,6 +22,7 @@ const USAGE = `Usage: npm run wb -- <command> [--household <id>]
   get <path>              GET a willys.se API path and print the JSON (exploration)
   plan [--dry-run]        make this week's plan and email it to the members (--dry-run prints it)
   inbox [--dry-run]       act on new email to the bot (--dry-run lists it without acting)
+  slack                   handle one slack-gateway request (JSON on stdin, response JSON on stdout)
   apply <plan-id>         fill the cart and book a slot for a plan without waiting for a reply
   plans                   list recent plans and their status`;
 
@@ -126,6 +128,12 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
     case "plan": {
       const row = await propose(ctx, { dryRun: values["dry-run"] === true, feedback: values.feedback as string | undefined });
       console.log(`Plan ${row.id} ${values["dry-run"] ? "drafted" : "sent"}`);
+      return;
+    }
+    case "slack": {
+      let raw = "";
+      for await (const chunk of process.stdin) raw += chunk;
+      console.log(JSON.stringify(await handleSlack(ctx, JSON.parse(raw) as SlackRequest)));
       return;
     }
     case "inbox": {
