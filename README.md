@@ -29,7 +29,7 @@ minutes, plan on Wednesdays at 07:00.
 From the Mac, once:
 
 ```sh
-deploy/sync-secrets.sh          # Resend key from Infisical (Food Bot), Willys login from Keychain
+deploy/sync-secrets.sh          # Resend key and Willys login from Infisical (Food Bot)
 deploy/push-household.sh lau    # config, preferences and database
 ```
 
