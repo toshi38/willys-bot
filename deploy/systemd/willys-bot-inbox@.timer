@@ -1,0 +1,9 @@
+[Unit]
+Description=food-bot: check for new email every five minutes (%i)
+
+[Timer]
+OnCalendar=*:0/5
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

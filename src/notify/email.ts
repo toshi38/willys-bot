@@ -1,139 +1,142 @@
 import { randomBytes } from "node:crypto";
-import { ImapFlow } from "imapflow";
-import { simpleParser } from "mailparser";
 import { marked } from "marked";
-import { createTransport } from "nodemailer";
 import type { Household } from "../core/household.ts";
-import { isMember } from "../core/household.ts";
 import { readSecret } from "../core/secrets.ts";
 
-// Plan emails go to every household member over SMTP. Replies are read over
-// IMAP from the same mailbox. A reply only counts when it answers a message
-// this bot sent (its Message-ID is in In-Reply-To or References), comes from
-// a member, and is authenticated (see senderAuthenticated).
+// The bot has its own address on a domain that Resend sends and receives
+// for. Mail goes out through Resend's API, and mail to the bot's address is
+// read back from Resend's received-email API, so no mailbox password is
+// involved and nothing reads a person's own inbox.
+
+const API = "https://api.resend.com";
 
 export interface OutgoingEmail {
   subject: string;
   markdown: string;
+  // Message-ID this email answers, for threading.
   inReplyTo?: string;
 }
 
-export async function sendToMembers(household: Household, email: OutgoingEmail): Promise<string> {
+// Sends to every household member and returns the Message-ID set on the
+// email, so later emails can thread under it.
+export async function sendToMembers(household: Household, email: OutgoingEmail, fetchImpl: typeof fetch = fetch): Promise<string> {
   const mail = household.config.mail;
-  const domain = mail.user.split("@")[1] ?? "localhost";
+  const domain = mail.address.split("@")[1];
   const messageId = `<willys-bot.${randomBytes(8).toString("hex")}@${domain}>`;
-  const transport = createTransport({
-    host: mail.smtpHost,
-    port: mail.smtpPort,
-    secure: mail.smtpPort === 465,
-    auth: { user: mail.user, pass: readSecret(mail.secret, "password") },
-  });
-  try {
-    await transport.sendMail({
-      from: mail.from,
+  const headers: Record<string, string> = { "Message-ID": messageId };
+  if (email.inReplyTo) {
+    headers["In-Reply-To"] = email.inReplyTo;
+    headers.References = email.inReplyTo;
+  }
+  await call(household, "/emails", fetchImpl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": messageId },
+    body: JSON.stringify({
+      from: `${mail.name} <${mail.address}>`,
       to: household.config.members.map((m) => `${m.name} <${m.email}>`),
       subject: email.subject,
-      messageId,
-      ...(email.inReplyTo ? { inReplyTo: email.inReplyTo, references: [email.inReplyTo] } : {}),
+      headers,
       text: email.markdown,
       html: `<!doctype html><html><body style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.45; max-width: 760px">${marked.parse(email.markdown, { async: false })}</body></html>`,
-    });
-  } finally {
-    transport.close();
-  }
+    }),
+  });
   return messageId;
 }
 
-export interface Reply {
+export interface ReceivedSummary {
+  id: string;
+  to: string[];
+  cc: string[];
   from: string;
-  date: Date;
-  messageId: string;
-  // The new text of the reply, with quoted history removed.
-  text: string;
+  subject: string;
+  created_at: string;
+  message_id: string;
 }
 
-// Replies to any of `sentIds` received since `since`, oldest first.
-export async function fetchReplies(household: Household, sentIds: string[], since: Date): Promise<Reply[]> {
-  const mail = household.config.mail;
-  const client = new ImapFlow({
-    host: mail.imapHost,
-    port: mail.imapPort,
-    secure: true,
-    auth: { user: mail.user, pass: readSecret(mail.secret, "password") },
-    logger: false,
-  });
-  await client.connect();
-  const replies: Reply[] = [];
-  try {
-    // Gmail files a reply sent from the same account under Sent, not Inbox,
-    // so search the all-mail folder when the server has one.
-    const boxes = await client.list();
-    const box = boxes.find((b) => b.specialUse === "\\All")?.path ?? "INBOX";
-    const lock = await client.getMailboxLock(box, { readOnly: true });
-    try {
-      const uids = await client.search({ since }, { uid: true });
-      if (!uids || !uids.length) return [];
-      for await (const msg of client.fetch(uids, { source: true, labels: true }, { uid: true })) {
-        if (!msg.source) continue;
-        const parsed = await simpleParser(msg.source);
-        const refs = [parsed.inReplyTo ?? "", ...(Array.isArray(parsed.references) ? parsed.references : [parsed.references ?? ""])];
-        if (!refs.some((r) => sentIds.includes(r))) continue;
-        if (parsed.messageId && sentIds.includes(parsed.messageId)) continue;
-        const from = parsed.from?.value[0]?.address ?? "";
-        if (!isMember(household, from)) continue;
-        const sentByMailbox = [...(msg.labels ?? [])].includes("\\Sent") && from.toLowerCase() === mail.user.toLowerCase();
-        if (!senderAuthenticated(msg.source.toString("utf8"), from, mail.trustedAuthservId, sentByMailbox)) continue;
-        replies.push({
-          from,
-          date: parsed.date ?? new Date(0),
-          messageId: parsed.messageId ?? "",
-          text: stripQuoted(parsed.text ?? ""),
-        });
-      }
-    } finally {
-      lock.release();
+export interface ReceivedEmail extends ReceivedSummary {
+  text: string | null;
+  html: string | null;
+  headers: Record<string, string> | null;
+  received_for?: string[] | null;
+  authentication: { spf: string; dkim: string; dmarc: string } | null;
+}
+
+// Every email the domain received since `since`, newest first. The list
+// covers the whole receiving domain; addressedTo picks out the bot's mail.
+export async function listReceived(household: Household, since: Date, fetchImpl: typeof fetch = fetch): Promise<ReceivedSummary[]> {
+  const out: ReceivedSummary[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const page = (await call(household, `/emails/receiving?limit=100${after ? `&after=${encodeURIComponent(after)}` : ""}`, fetchImpl)) as {
+      data: ReceivedSummary[];
+      has_more: boolean;
+    };
+    for (const e of page.data) {
+      if (new Date(e.created_at) < since) return out;
+      out.push(e);
     }
-  } finally {
-    await client.logout();
+    if (!page.has_more || !page.data.length) return out;
+    after = page.data[page.data.length - 1].id;
   }
-  return replies.sort((a, b) => a.date.getTime() - b.date.getTime());
 }
 
-// A reply is trusted when the receiving server vouches for its sender:
-// the topmost Authentication-Results header (added by our own mail server,
-// above anything the sender could inject) must come from the trusted
-// authserv-id and show DMARC passing for the From domain, or DKIM passing
-// with a signing domain aligned to it. Mail the mailbox account sent itself
-// carries no such header; it is trusted only when the server files it as
-// sent by that account.
-export function senderAuthenticated(rawMessage: string, from: string, trustedAuthservId: string, sentByMailbox: boolean): boolean {
-  const ar = topHeader(rawMessage, "authentication-results");
-  if (!ar) return sentByMailbox;
-  const [authserv, ...rest] = ar.split(";");
-  if (authserv.trim().toLowerCase() !== trustedAuthservId.toLowerCase()) return false;
-  const fromDomain = from.split("@")[1]?.toLowerCase() ?? "";
-  if (!fromDomain) return false;
-  const aligned = (d: string | undefined) => !!d && (d.toLowerCase() === fromDomain || fromDomain.endsWith(`.${d.toLowerCase()}`));
-  for (const clause of rest) {
-    const c = clause.trim();
-    if (/^dmarc=pass\b/i.test(c) && aligned(c.match(/header\.from=([^\s;]+)/i)?.[1])) return true;
-    if (/^dkim=pass\b/i.test(c) && aligned(c.match(/header\.d=([^\s;]+)/i)?.[1] ?? c.match(/header\.i=@?([^\s;]+)/i)?.[1]?.split("@").pop())) return true;
-  }
-  return false;
+export async function getReceived(household: Household, id: string, fetchImpl: typeof fetch = fetch): Promise<ReceivedEmail> {
+  return (await call(household, `/emails/receiving/${encodeURIComponent(id)}`, fetchImpl)) as ReceivedEmail;
 }
 
-// The first occurrence of a header in a raw message, unfolded.
-function topHeader(raw: string, name: string): string | null {
-  const head = raw.split(/\r?\n\r?\n/, 1)[0];
-  const lines = head.split(/\r?\n/);
-  const prefix = `${name.toLowerCase()}:`;
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].toLowerCase().startsWith(prefix)) continue;
-    let value = lines[i].slice(prefix.length);
-    while (i + 1 < lines.length && /^[ \t]/.test(lines[i + 1])) value += ` ${lines[++i].trim()}`;
-    return value.replace(/\s+/g, " ").trim();
-  }
-  return null;
+async function call(household: Household, path: string, fetchImpl: typeof fetch, init: RequestInit = {}): Promise<unknown> {
+  const key = readSecret(household.config.mail.secret, "key");
+  const res = await fetchImpl(`${API}${path}`, { ...init, headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${key}` } });
+  const body = (await res.json().catch(() => ({}))) as { message?: string };
+  if (!res.ok) throw new Error(`Resend ${init.method ?? "GET"} ${path.split("?")[0]} failed (${res.status}): ${body.message ?? "no details"}`);
+  return body;
+}
+
+// The bare address in "Name <addr>" or "addr".
+export function address(value: string): string {
+  return (value.match(/<([^>]+)>/)?.[1] ?? value).trim().toLowerCase();
+}
+
+export function addressedTo(email: Pick<ReceivedSummary, "to" | "cc">, bot: string): boolean {
+  const b = bot.toLowerCase();
+  return [...(email.to ?? []), ...(email.cc ?? [])].some((a) => address(a) === b);
+}
+
+// A sender is trusted when Resend's receiving server verified the From
+// domain: DMARC passed, or DKIM passed (Resend reports DKIM as "gray"
+// unless the signing domain matches the From domain). These verdicts are
+// computed on receipt, not read from headers the sender could write.
+export function senderAuthenticated(email: Pick<ReceivedEmail, "authentication">): boolean {
+  const a = email.authentication;
+  return !!a && (a.dmarc === "pass" || a.dkim === "pass");
+}
+
+// Out-of-office replies and other machine-sent mail, which must never get
+// an answer or two bots can reply to each other forever.
+export function automated(email: Pick<ReceivedEmail, "headers">): boolean {
+  const h = Object.fromEntries(Object.entries(email.headers ?? {}).map(([k, v]) => [k.toLowerCase(), String(v).toLowerCase()]));
+  if (h["auto-submitted"] && h["auto-submitted"] !== "no") return true;
+  if (/^(bulk|junk|list|auto_reply)$/.test(h.precedence ?? "")) return true;
+  return "x-autoreply" in h || "x-autorespond" in h;
+}
+
+// The new text of a reply, with quoted history removed.
+export function replyText(email: Pick<ReceivedEmail, "text" | "html">): string {
+  const text = email.text ?? htmlToText(email.html ?? "");
+  return stripQuoted(text);
+}
+
+function htmlToText(html: string): string {
+  return html
+    .replace(/<blockquote[\s\S]*?<\/blockquote>/gi, "\n> quoted\n")
+    .replace(/<(br|\/p|\/div|\/li)\b[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&quot;/g, '"');
 }
 
 export function stripQuoted(text: string): string {
@@ -145,6 +148,11 @@ export function stripQuoted(text: string): string {
     out.push(line);
   }
   return out.join("\n").trim();
+}
+
+// The plan token in a subject such as "Re: Willys order: week 42 [wb:1a2b3c4d]".
+export function planToken(subject: string): string | null {
+  return subject.match(/\[wb:([0-9a-f]{8})\]/)?.[1] ?? null;
 }
 
 export type Decision = { kind: "approve" } | { kind: "reject" } | { kind: "change"; feedback: string };

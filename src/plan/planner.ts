@@ -1,7 +1,5 @@
-import { spawn } from "node:child_process";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { z } from "zod";
+import { runClaude } from "../core/claude.ts";
 import type { Context } from "../core/context.ts";
 import type { PlanLine } from "../core/store.ts";
 
@@ -71,7 +69,7 @@ const PLAN_SCHEMA = {
     },
     notes: { type: "string", description: "Anything the household should check before approving" },
   },
-  required: ["summary", "dinners", "lines", "skipped", "notes"],
+  required: ["summary", "meals", "lines", "skipped", "notes"],
 };
 
 const SYSTEM_PROMPT = `You do the weekly grocery shop for a household at Willys, a Swedish discount supermarket. You plan the week's dishes and pick the exact products to order for click-and-collect.
@@ -118,28 +116,14 @@ export function buildPrompt(ctx: Context, feedback: string | null): string {
 }
 
 export async function makePlan(ctx: Context, feedback: string | null = null): Promise<Plan> {
-  const mcpConfig = join(ctx.store.dir, "planner-mcp.json");
-  const root = new URL("../../", import.meta.url).pathname;
-  writeFileSync(
-    mcpConfig,
-    JSON.stringify({
-      mcpServers: {
-        willys: {
-          type: "stdio",
-          command: process.execPath,
-          args: ["--no-warnings=ExperimentalWarning", join(root, "src/mcp/server.ts"), "--household", ctx.household.id, "--member", "planner", "--read-only"],
-          env: { ...(process.env.WILLYS_BOT_DATA ? { WILLYS_BOT_DATA: process.env.WILLYS_BOT_DATA } : {}), ...(process.env.WILLYS_BOT_HOUSEHOLDS ? { WILLYS_BOT_HOUSEHOLDS: process.env.WILLYS_BOT_HOUSEHOLDS } : {}) },
-        },
-      },
-    }),
-  );
-  const tools = ["search_products", "current_offers", "price_history", "list_view", "pantry_view"].map((t) => `mcp__willys__${t}`);
-  const output = await runClaude(buildPrompt(ctx, feedback), [
-    "--mcp-config", mcpConfig,
-    "--strict-mcp-config",
-    "--tools", "",
-    "--allowedTools", tools.join(","),
-  ]);
+  const output = await runClaude(ctx, {
+    systemPrompt: SYSTEM_PROMPT,
+    prompt: buildPrompt(ctx, feedback),
+    schema: PLAN_SCHEMA,
+    tools: ["search_products", "current_offers", "price_history", "list_view", "pantry_view"],
+    member: "planner",
+    readOnly: true,
+  });
   return PlanOutput.parse(output);
 }
 
@@ -158,38 +142,4 @@ export function planLines(ctx: Context, plan: Plan): { lines: PlanLine[]; unknow
     lines.push({ productCode: l.productCode, name, qty: l.qty, unitPrice: price, reason: l.reason, listItemIds: l.listItemIds, restocks: l.restocks || null });
   }
   return { lines, unknown };
-}
-
-function runClaude(prompt: string, extraArgs: string[]): Promise<unknown> {
-  const args = [
-    "-p",
-    "--output-format", "json",
-    "--no-session-persistence",
-    "--setting-sources", "",
-    "--model", process.env.WILLYS_BOT_MODEL ?? "sonnet",
-    "--system-prompt", SYSTEM_PROMPT,
-    "--json-schema", JSON.stringify(PLAN_SCHEMA),
-    ...extraArgs,
-  ];
-  return new Promise((resolve, reject) => {
-    const child = spawn("claude", args, { stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => child.kill("SIGTERM"), 30 * 60_000);
-    child.stdout.on("data", (d) => (stdout += d));
-    child.stderr.on("data", (d) => (stderr += d));
-    child.on("error", reject);
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      try {
-        const out = JSON.parse(stdout) as { is_error?: boolean; structured_output?: unknown; result?: string };
-        if (out.is_error || code !== 0) return reject(new Error(`claude exited ${code}: ${out.result ?? stderr}`));
-        if (out.structured_output === undefined) return reject(new Error("claude returned no structured output"));
-        resolve(out.structured_output);
-      } catch {
-        reject(new Error(`claude exited ${code} with unparseable output: ${(stderr || stdout).slice(0, 500)}`));
-      }
-    });
-    child.stdin.end(prompt);
-  });
 }

@@ -1,16 +1,27 @@
 import type { Context } from "../core/context.ts";
+import { memberByLogin } from "../core/household.ts";
 import { snapshotCampaigns } from "../core/prices.ts";
 import type { PlanLine, PlanRow } from "../core/store.ts";
-import { classifyReply, fetchReplies, sendToMembers, type Decision } from "../notify/email.ts";
+import { sendToMembers, type Decision } from "../notify/email.ts";
+import { postToSlack, updateSlack, type SlackRef } from "../notify/slack.ts";
 import { makePlan, planLines, type Plan } from "./planner.ts";
 import { bookPickupSlot } from "./slots.ts";
 
-// The weekly cycle: propose a plan and email it, then poll for a member's
-// reply. "yes" fills the Willys cart and books a pickup slot; anything other
-// than yes or no is fed back to the planner and a revised plan is sent in
-// the same thread. Placing the order stays a manual step on willys.se.
+// The weekly cycle: propose a plan and email it, then act on a member's
+// decision (an email reply, see inbox.ts, or the web UI). Approval fills the
+// Willys cart and books a pickup slot; a change request is fed back to the
+// planner and a revised plan is sent in the same thread. Placing the order
+// stays a manual step on willys.se.
 
 const idsKey = (planId: string) => `plan.${planId}.messageIds`;
+const slackKey = (planId: string) => `plan.${planId}.slack`;
+const slackThreadKey = (ts: string) => `slack.thread.${ts}`;
+
+// The plan a Slack thread belongs to, from the ts of the plan's post.
+export function planForSlackThread(ctx: Context, threadTs: string | null): PlanRow | null {
+  const id = threadTs ? ctx.store.get(slackThreadKey(threadTs)) : null;
+  return id ? ctx.store.plan(id) : null;
+}
 
 export async function propose(ctx: Context, opts: { feedback?: string; replyTo?: string; dryRun?: boolean } = {}): Promise<PlanRow> {
   const { store, household, willys } = ctx;
@@ -18,7 +29,8 @@ export async function propose(ctx: Context, opts: { feedback?: string; replyTo?:
   const plan = await makePlan(ctx, opts.feedback ?? null);
   const { lines, unknown } = planLines(ctx, plan);
   const row = store.createPlan(plan, lines);
-  const markdown = renderPlan(plan, lines, unknown, row.token);
+  const body = renderPlan(plan, lines, unknown);
+  const markdown = `${body}\n\n---\nReply **yes** to fill the cart and book a pickup slot, **no** to skip this week, or write what to change and a new plan will follow. You can also email me any time to add to the list or update the pantry or your preferences.\n(plan ${row.token})`;
   if (opts.dryRun) {
     console.log(markdown);
     return row;
@@ -34,21 +46,42 @@ export async function propose(ctx: Context, opts: { feedback?: string; replyTo?:
   });
   store.set(idsKey(row.id), JSON.stringify([messageId]));
   store.updatePlan(row.id, { status: "sent", sentAt: new Date().toISOString() });
+  await toSlack(async () => {
+    const title = `**Willys order: week ${isoWeek(new Date())}**\n\n${body}`;
+    const ref = await postToSlack(household, `${title}\n\nApprove to fill the cart and book a pickup slot, or reply in this thread with what to change.`, {
+      buttons: [
+        { action: "plan.approve", label: "Approve", value: row.id, style: "primary" },
+        { action: "plan.skip", label: "Skip this week", value: row.id },
+      ],
+    });
+    if (ref) {
+      store.set(slackKey(row.id), JSON.stringify({ ...ref, title }));
+      store.set(slackThreadKey(ref.ts), row.id);
+    }
+  });
   return store.plan(row.id)!;
 }
 
-// Checks every sent plan for replies and acts on the first decisive one.
-export async function poll(ctx: Context, opts: { dryRun?: boolean } = {}): Promise<string[]> {
-  const { store, household } = ctx;
-  const log: string[] = [];
-  for (const plan of store.plans(["sent"])) {
-    const sentIds = JSON.parse(store.get(idsKey(plan.id)) ?? "[]") as string[];
-    const replies = await fetchReplies(household, sentIds, new Date(plan.sentAt ?? plan.createdAt));
-    const reply = replies[0];
-    if (!reply) continue;
-    log.push(...(await decide(ctx, plan, classifyReply(reply.text), reply.from, { replyTo: reply.messageId, dryRun: opts.dryRun })));
+// Slack is an extra channel: a failure there is logged and never stops the
+// email flow or a decision.
+async function toSlack(f: () => Promise<unknown>): Promise<void> {
+  try {
+    await f();
+  } catch (err) {
+    console.error(`Slack: ${err instanceof Error ? err.message : err}`);
   }
-  return log;
+}
+
+function slackPost(ctx: Context, planId: string): (SlackRef & { title: string }) | null {
+  const raw = ctx.store.get(slackKey(planId));
+  return raw ? (JSON.parse(raw) as SlackRef & { title: string }) : null;
+}
+
+// Replaces the plan's Slack post with its outcome, so the buttons go away
+// whichever way (email, Slack or the web UI) the decision came.
+async function markSlackPlan(ctx: Context, planId: string, outcome: string): Promise<void> {
+  const post = slackPost(ctx, planId);
+  if (post) await toSlack(() => updateSlack(ctx.household, post, `${post.title}\n\n*${outcome}*`));
 }
 
 // Acts on a member's decision about a sent plan, whether it came from an
@@ -57,12 +90,15 @@ export async function decide(ctx: Context, plan: PlanRow, decision: Decision, by
   const { store } = ctx;
   if (plan.status !== "sent") throw new Error(`Plan ${plan.id} is ${plan.status}, not waiting for a decision`);
   const decidedAt = new Date().toISOString();
+  const who = memberByLogin(ctx.household, by)?.name ?? by;
   if (decision.kind === "approve") {
     store.updatePlan(plan.id, { status: "approved", decidedBy: by, decidedAt });
+    await markSlackPlan(ctx, plan.id, `Approved by ${who}`);
     return [`${plan.id}: approved by ${by}`, await apply(ctx, store.plan(plan.id)!, opts)];
   }
   const note = decision.kind === "change" ? decision.feedback : "rejected";
   store.updatePlan(plan.id, { status: "rejected", decidedBy: by, decidedAt, decisionNote: note });
+  await markSlackPlan(ctx, plan.id, decision.kind === "reject" ? `Skipped this week by ${who}` : `${who} asked for changes, a revised plan follows`);
   if (decision.kind === "reject") return [`${plan.id}: rejected by ${by}`];
   const replyTo = opts.replyTo ?? (JSON.parse(store.get(idsKey(plan.id)) ?? "[]") as string[]).at(-1);
   const next = await propose(ctx, { feedback: decision.feedback, replyTo, dryRun: opts.dryRun });
@@ -91,17 +127,20 @@ export async function apply(ctx: Context, plan: PlanRow, opts: { dryRun?: boolea
     }
     store.updatePlan(plan.id, { status: "applied", appliedAt: new Date().toISOString() });
     const ids = JSON.parse(store.get(idsKey(plan.id)) ?? "[]") as string[];
+    const note = [
+      `The cart is filled: ${after.products.length} products, total ${after.totalPrice ?? "?"}.`,
+      slot ? `Pickup slot booked: ${slot}.` : "No pickup slot inside the window was free: pick one on willys.se.",
+      "",
+      "Review and place the order at https://www.willys.se/kassa",
+    ].join("\n");
     const sent = await sendToMembers(household, {
       subject: `Re: Willys order: week ${isoWeek(new Date(plan.createdAt))} [wb:${plan.token}]`,
       inReplyTo: opts.replyTo ?? ids[0],
-      markdown: [
-        `The cart is filled: ${after.products.length} products, total ${after.totalPrice ?? "?"}.`,
-        slot ? `Pickup slot booked: ${slot}.` : "No pickup slot inside the window was free: pick one on willys.se.",
-        "",
-        "Review and place the order at https://www.willys.se/kassa",
-      ].join("\n"),
+      markdown: note,
     });
     store.set(idsKey(plan.id), JSON.stringify([...ids, sent]));
+    const post = slackPost(ctx, plan.id);
+    if (post) await toSlack(() => postToSlack(household, note, { threadTs: post.ts }));
     return `${plan.id}: cart filled (${after.totalPrice ?? "?"}), slot ${slot ?? "not booked"}`;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -110,7 +149,9 @@ export async function apply(ctx: Context, plan: PlanRow, opts: { dryRun?: boolea
   }
 }
 
-export function renderPlan(plan: Plan, lines: PlanLine[], unknown: string[], token: string): string {
+// The plan itself, without the instructions on how to answer, which differ
+// between email and Slack.
+export function renderPlan(plan: Plan, lines: PlanLine[], unknown: string[]): string {
   const total = lines.reduce((sum, l) => sum + l.qty * l.unitPrice, 0);
   const out = [
     plan.summary,
@@ -124,12 +165,6 @@ export function renderPlan(plan: Plan, lines: PlanLine[], unknown: string[], tok
   if (plan.skipped.length) out.push("", "## Not bought", ...plan.skipped.map((s) => `- List item #${s.listItemId}: ${s.reason}`));
   if (unknown.length) out.push("", `Dropped ${unknown.length} product code(s) the planner did not look up: ${unknown.join(", ")}`);
   if (plan.notes) out.push("", "## Notes", plan.notes);
-  out.push(
-    "",
-    "---",
-    "Reply **yes** to fill the cart and book a pickup slot, **no** to skip this week, or write what to change and a new plan will follow.",
-    `(plan ${token})`,
-  );
   return out.join("\n");
 }
 
