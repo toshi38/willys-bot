@@ -23,13 +23,23 @@ needs Resend's receiving MX record in addition to the sending records.
 
 ## Slack
 
-With `"slack": {"bot": "food"}` in `household.json` and
-slack-gateway (its own repo) running on the same machine, every plan is also posted to
-food-bot's Slack channel with **Approve** and **Skip this week** buttons, and its post shows the
-outcome however the plan was decided. A message in the channel works like an email to the bot: a
-plain yes or no in a plan's thread decides it, anything else goes to the same Claude agent. The
-gateway runs `deploy/run.sh <household> slack` for each message or click. When the gateway is
-not running, nothing is posted and email carries on as usual.
+With `"slack": {"bot": "food"}` in `household.json` and slack-gateway (its own repo) running on
+the same machine, food-bot keeps one thread per weekly shop in its Slack channel. The shop runs
+up to the next pickup, so after Friday's pickup window closes, changes go into next week's
+thread. The thread gets:
+
+- every plan, with **Approve** and **Skip this week** buttons, also shown in the channel; the
+  post is replaced with the outcome however the plan was decided,
+- everything food-bot emails the household, and each member email it answered,
+- the changes members make to the list, pantry and preferences, from any source (Slack, email,
+  the web UI, the CLI, the MCP server), posted on the next inbox run or straight after a Slack
+  message,
+- the filled cart and pickup slot.
+
+A message in the channel works like an email to the bot: a plain yes or no in the week's thread
+decides the plan, anything else goes to the same Claude agent. The gateway runs
+`deploy/run.sh <household> slack` for each message or click. When the gateway is not running,
+nothing is posted and email carries on as usual.
 
 ## Running on hermes
 

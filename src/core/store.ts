@@ -171,6 +171,13 @@ export class Store {
         note TEXT,
         updated_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS changes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at TEXT NOT NULL,
+        by TEXT NOT NULL,
+        text TEXT NOT NULL,
+        posted INTEGER NOT NULL DEFAULT 0
+      );
       CREATE TABLE IF NOT EXISTS kv (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -190,7 +197,9 @@ export class Store {
         `INSERT INTO list_items (text, quantity, note, product_code, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
       )
       .get(item.text, item.quantity ?? null, item.note ?? null, item.productCode ?? null, item.addedBy, now());
-    return toListItem(row);
+    const added = toListItem(row);
+    this.logChange(item.addedBy, `added ${describe(added)} to the list`);
+    return added;
   }
 
   listItems(statuses: ListStatus[] = ["open"]): ListItem[] {
@@ -198,7 +207,9 @@ export class Store {
     return this.#db.prepare(`SELECT * FROM list_items WHERE status IN (${marks}) ORDER BY id`).all(...statuses).map(toListItem);
   }
 
-  updateListItem(id: number, patch: { status?: ListStatus; productCode?: string | null; quantity?: string | null; note?: string | null; planId?: string | null }): ListItem | null {
+  // `by` names the person making the change, for the change log; changes
+  // the bot makes while ordering pass none.
+  updateListItem(id: number, patch: { status?: ListStatus; productCode?: string | null; quantity?: string | null; note?: string | null; planId?: string | null }, by?: string): ListItem | null {
     const current = this.#db.prepare(`SELECT * FROM list_items WHERE id = ?`).get(id);
     if (!current) return null;
     const c = toListItem(current);
@@ -212,7 +223,12 @@ export class Store {
         patch.planId !== undefined ? patch.planId : c.planId,
         id,
       );
-    return toListItem(row);
+    const updated = toListItem(row);
+    if (by) {
+      if (patch.status === "removed" && c.status !== "removed") this.logChange(by, `removed ${describe(c)} from the list`);
+      else if (updated.quantity !== c.quantity || updated.note !== c.note || updated.productCode !== c.productCode) this.logChange(by, `changed ${describe(updated)} on the list`);
+    }
+    return updated;
   }
 
   // Pantry: what the household keeps at home, so the planner neither buys
@@ -243,11 +259,35 @@ export class Store {
         item.updatedBy,
         now(),
       );
-    return toPantryItem(row);
+    const saved = toPantryItem(row);
+    // Restocking after an order is the bot's own bookkeeping, not news.
+    if (item.updatedBy !== "food-bot" && (!c || c.status !== saved.status)) this.logChange(item.updatedBy, `marked ${saved.name} as ${saved.status === "have" ? "in stock" : saved.status} in the pantry`);
+    return saved;
   }
 
-  removePantryItem(name: string): boolean {
-    return this.#db.prepare(`DELETE FROM pantry WHERE name_key = ?`).run(name.trim().toLowerCase()).changes > 0;
+  removePantryItem(name: string, by?: string): boolean {
+    const removed = this.#db.prepare(`DELETE FROM pantry WHERE name_key = ?`).run(name.trim().toLowerCase()).changes > 0;
+    if (removed && by) this.logChange(by, `stopped tracking ${name.trim()} in the pantry`);
+    return removed;
+  }
+
+  // Change log: who changed what in the list, pantry and preferences, for
+  // the weekly Slack thread. Rows are posted once and then marked.
+
+  logChange(by: string, text: string): void {
+    this.#db.prepare(`INSERT INTO changes (at, by, text) VALUES (?, ?, ?)`).run(now(), by, text);
+  }
+
+  unpostedChanges(): { id: number; at: string; by: string; text: string }[] {
+    return this.#db
+      .prepare(`SELECT id, at, by, text FROM changes WHERE posted = 0 ORDER BY id`)
+      .all()
+      .map((r) => ({ id: Number(r.id), at: String(r.at), by: String(r.by), text: String(r.text) }));
+  }
+
+  markChangesPosted(ids: number[]): void {
+    const stmt = this.#db.prepare(`UPDATE changes SET posted = 1 WHERE id = ?`);
+    for (const id of ids) stmt.run(id);
   }
 
   // Products and prices
@@ -434,6 +474,11 @@ function parseSek(label: string): number | null {
 }
 
 const round = (n: number) => Math.round(n * 100) / 100;
+
+// "2 x milk (lactose free)" for the change log.
+function describe(i: ListItem): string {
+  return `${i.quantity ? `${i.quantity} x ` : ""}${i.text}${i.note ? ` (${i.note})` : ""}`;
+}
 
 function toListItem(r: Record<string, unknown> | undefined): ListItem {
   if (!r) throw new Error("missing row");

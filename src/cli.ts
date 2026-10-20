@@ -84,7 +84,7 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
         const item = store.addListItem({ text: args.join(" "), quantity: (values.qty as string) ?? null, note: (values.note as string) ?? null, addedBy: "cli" });
         console.log(`Added #${item.id} ${item.text}`);
       } else if (sub === "remove") {
-        const item = store.updateListItem(Number(args[0]), { status: "removed" });
+        const item = store.updateListItem(Number(args[0]), { status: "removed" }, "cli");
         console.log(item ? `Removed #${item.id} ${item.text}` : "No such item");
       } else {
         for (const i of store.listItems()) console.log(`#${i.id} ${i.text}${i.quantity ? ` x ${i.quantity}` : ""}${i.note ? ` (${i.note})` : ""} [${i.addedBy}]`);
@@ -100,7 +100,7 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
         const item = store.setPantryItem({ name, status: status as "have" | "low" | "out", quantity: values.qty as string | undefined, note: values.note as string | undefined, updatedBy: "cli" });
         console.log(`${item.name}: ${item.status}`);
       } else if (sub === "remove") {
-        console.log(store.removePantryItem(name) ? `Removed ${name}` : `No pantry entry ${name}`);
+        console.log(store.removePantryItem(name, "cli") ? `Removed ${name}` : `No pantry entry ${name}`);
       } else {
         for (const p of store.pantryItems()) console.log(`${p.name}: ${p.status}${p.quantity ? `, ${p.quantity}` : ""}${p.note ? ` (${p.note})` : ""}`);
       }

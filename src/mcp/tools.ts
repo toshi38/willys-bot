@@ -69,13 +69,13 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
         note: z.string().nullable().optional(),
       },
     },
-    async ({ id, ...patch }) => text(store.updateListItem(id, patch) ?? `No item #${id}`),
+    async ({ id, ...patch }) => text(store.updateListItem(id, patch, member) ?? `No item #${id}`),
   );
 
   if (!readOnly) server.registerTool(
     "list_remove",
     { description: "Remove an item from the list.", inputSchema: { id: z.number().int() } },
-    async ({ id }) => text(store.updateListItem(id, { status: "removed" }) ?? `No item #${id}`),
+    async ({ id }) => text(store.updateListItem(id, { status: "removed" }, member) ?? `No item #${id}`),
   );
 
   server.registerTool(
@@ -108,7 +108,7 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
   if (!readOnly) server.registerTool(
     "pantry_remove",
     { description: "Stop tracking a pantry entry.", inputSchema: { name: z.string().min(1) } },
-    async ({ name }) => text(store.removePantryItem(name) ? `Removed ${name}` : `No pantry entry ${name}`),
+    async ({ name }) => text(store.removePantryItem(name, member) ? `Removed ${name}` : `No pantry entry ${name}`),
   );
 
   server.registerTool(
@@ -129,6 +129,7 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
       history.unshift({ at: new Date().toISOString(), by: member, change, previous: household.preferences });
       store.set(PREFERENCES_HISTORY, JSON.stringify(history.slice(0, 20)));
       savePreferences(household, markdown);
+      store.logChange(member, `updated the preferences: ${change}`);
       return text(`Saved. ${change}`);
     },
   );

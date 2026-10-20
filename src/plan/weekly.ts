@@ -3,9 +3,10 @@ import { memberByLogin } from "../core/household.ts";
 import { snapshotCampaigns } from "../core/prices.ts";
 import type { PlanLine, PlanRow } from "../core/store.ts";
 import { sendToMembers, type Decision } from "../notify/email.ts";
-import { postToSlack, updateSlack, type SlackRef } from "../notify/slack.ts";
+import { updateSlack, type SlackRef } from "../notify/slack.ts";
 import { makePlan, planLines, type Plan } from "./planner.ts";
 import { bookPickupSlot } from "./slots.ts";
+import { postToWeek, tellHousehold, toSlack, weekThread } from "./week.ts";
 
 // The weekly cycle: propose a plan and email it, then act on a member's
 // decision (an email reply, see inbox.ts, or the web UI). Approval fills the
@@ -17,7 +18,8 @@ const idsKey = (planId: string) => `plan.${planId}.messageIds`;
 const slackKey = (planId: string) => `plan.${planId}.slack`;
 const slackThreadKey = (ts: string) => `slack.thread.${ts}`;
 
-// The plan a Slack thread belongs to, from the ts of the plan's post.
+// The plan a Slack thread belongs to: the week's thread and the plan's own
+// post both lead to the latest plan posted in that week.
 export function planForSlackThread(ctx: Context, threadTs: string | null): PlanRow | null {
   const id = threadTs ? ctx.store.get(slackThreadKey(threadTs)) : null;
   return id ? ctx.store.plan(id) : null;
@@ -48,28 +50,21 @@ export async function propose(ctx: Context, opts: { feedback?: string; replyTo?:
   store.updatePlan(row.id, { status: "sent", sentAt: new Date().toISOString() });
   await toSlack(async () => {
     const title = `**Willys order: week ${isoWeek(new Date())}**\n\n${body}`;
-    const ref = await postToSlack(household, `${title}\n\nApprove to fill the cart and book a pickup slot, or reply in this thread with what to change.`, {
+    const ref = await postToWeek(ctx, `${title}\n\nApprove to fill the cart and book a pickup slot, or reply in this thread with what to change.`, {
       buttons: [
         { action: "plan.approve", label: "Approve", value: row.id, style: "primary" },
         { action: "plan.skip", label: "Skip this week", value: row.id },
       ],
+      broadcast: true,
     });
-    if (ref) {
+    const thread = await weekThread(ctx);
+    if (ref && thread) {
       store.set(slackKey(row.id), JSON.stringify({ ...ref, title }));
       store.set(slackThreadKey(ref.ts), row.id);
+      store.set(slackThreadKey(thread.ts), row.id);
     }
   });
   return store.plan(row.id)!;
-}
-
-// Slack is an extra channel: a failure there is logged and never stops the
-// email flow or a decision.
-async function toSlack(f: () => Promise<unknown>): Promise<void> {
-  try {
-    await f();
-  } catch (err) {
-    console.error(`Slack: ${err instanceof Error ? err.message : err}`);
-  }
 }
 
 function slackPost(ctx: Context, planId: string): (SlackRef & { title: string }) | null {
@@ -133,14 +128,12 @@ export async function apply(ctx: Context, plan: PlanRow, opts: { dryRun?: boolea
       "",
       "Review and place the order at https://www.willys.se/kassa",
     ].join("\n");
-    const sent = await sendToMembers(household, {
-      subject: `Re: Willys order: week ${isoWeek(new Date(plan.createdAt))} [wb:${plan.token}]`,
-      inReplyTo: opts.replyTo ?? ids[0],
-      markdown: note,
-    });
+    const sent = await tellHousehold(
+      ctx,
+      { subject: `Re: Willys order: week ${isoWeek(new Date(plan.createdAt))} [wb:${plan.token}]`, inReplyTo: opts.replyTo ?? ids[0], markdown: note },
+      `**Order ready**\n${note}`,
+    );
     store.set(idsKey(plan.id), JSON.stringify([...ids, sent]));
-    const post = slackPost(ctx, plan.id);
-    if (post) await toSlack(() => postToSlack(household, note, { threadTs: post.ts }));
     return `${plan.id}: cart filled (${after.totalPrice ?? "?"}), slot ${slot ?? "not booked"}`;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
