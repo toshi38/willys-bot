@@ -12,10 +12,10 @@ import {
   listReceived,
   planToken,
   replyText,
-  sendToMembers,
   senderAuthenticated,
   type ReceivedEmail,
 } from "../notify/email.ts";
+import { postChanges, tellHousehold, toSlack } from "./week.ts";
 import { decide, propose } from "./weekly.ts";
 
 // Email to the bot's address, read from Resend on a timer. Only mail from a
@@ -79,7 +79,7 @@ export async function handleInbox(ctx: Context, opts: { dryRun?: boolean } = {})
       store.recordMail({ ...base, status: final ? "failed" : "retry", attempts, note: message });
       log.push(`${email.id} from ${member!.name}: attempt ${attempts} failed: ${message}`);
       if (final) {
-        await sendToMembers(household, {
+        await tellHousehold(ctx, {
           subject: reSubject(email.subject),
           inReplyTo: email.message_id,
           markdown: `Sorry ${member!.name}, I could not handle this email after ${attempts} tries, so nothing was changed. Stephen can see why in the bot's log.\n\n(${message.slice(0, 300)})`,
@@ -87,6 +87,7 @@ export async function handleInbox(ctx: Context, opts: { dryRun?: boolean } = {})
       }
     }
   }
+  if (!opts.dryRun) await toSlack(() => postChanges(ctx));
   return log;
 }
 
@@ -104,7 +105,11 @@ async function handleEmail(ctx: Context, email: ReceivedEmail, name: string, fro
   const outcome = await runIntake(ctx, { name, via: "email", subject: email.subject ?? "", text, plan, thread: [] });
   const log = [`${email.id} from ${name}: ${outcome.summary}`];
   if (outcome.reply) {
-    await sendToMembers(household, { subject: reSubject(email.subject), markdown: outcome.reply, inReplyTo: email.message_id });
+    await tellHousehold(
+      ctx,
+      { subject: reSubject(email.subject), markdown: outcome.reply, inReplyTo: email.message_id },
+      `**${name} emailed:** ${quote(text)}\n\n${outcome.reply}`,
+    );
   }
   if (outcome.planFeedback) {
     if (waiting) log.push(...(await decide(ctx, waiting, { kind: "change", feedback: outcome.planFeedback }, from, { replyTo: email.message_id })));
@@ -187,6 +192,12 @@ export async function runIntake(ctx: Context, input: IntakeInput): Promise<z.inf
   });
   ctx.household.preferences = loadHousehold(ctx.household.id).preferences;
   return IntakeOutput.parse(output);
+}
+
+// The start of an email, quoted for the weekly thread.
+function quote(text: string): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  return t.length > 300 ? `${t.slice(0, 300)}...` : t;
 }
 
 function reSubject(subject: string | null): string {

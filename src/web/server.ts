@@ -91,7 +91,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     }
     const listRemove = path.match(/^\/list\/(\d+)\/remove$/);
     if (listRemove) {
-      store.updateListItem(Number(listRemove[1]), { status: "removed" });
+      store.updateListItem(Number(listRemove[1]), { status: "removed" }, member);
       return redirect(res, "/list");
     }
     if (path === "/pantry/set") {
@@ -103,7 +103,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return redirect(res, "/pantry");
     }
     if (path === "/pantry/remove") {
-      store.removePantryItem(form.get("name") ?? "");
+      store.removePantryItem(form.get("name") ?? "", member);
       return redirect(res, "/pantry");
     }
     if (path === "/plans/new") {

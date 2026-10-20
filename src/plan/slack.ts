@@ -2,12 +2,13 @@ import type { Context } from "../core/context.ts";
 import { memberByLogin } from "../core/household.ts";
 import { classifyReply } from "../notify/email.ts";
 import { runIntake } from "./inbox.ts";
+import { postChanges, toSlack } from "./week.ts";
 import { decide, planForSlackThread, propose } from "./weekly.ts";
 
 // food-bot's side of slack-gateway's contract: one request in, one response
 // out. The gateway has already checked the workspace; who may use food-bot
 // is decided here, from the Slack user's verified email, the same way as
-// for email.
+// for email. Replies in this week's thread are about the latest plan in it.
 
 export type SlackRequest =
   | { type: "message"; from: { email: string; name: string }; text: string; where: Where; thread: { from: string; text: string }[] }
@@ -24,6 +25,13 @@ export interface SlackResponse {
 }
 
 export async function handleSlack(ctx: Context, req: SlackRequest): Promise<SlackResponse> {
+  const response = await respond(ctx, req);
+  // Whatever the message changed goes in this week's thread straight away.
+  await toSlack(() => postChanges(ctx));
+  return response;
+}
+
+async function respond(ctx: Context, req: SlackRequest): Promise<SlackResponse> {
   const { store, household } = ctx;
   const member = memberByLogin(household, req.from.email);
   if (!member) return { reply: "Sorry, I only take requests from the household." };

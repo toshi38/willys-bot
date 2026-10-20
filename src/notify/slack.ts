@@ -24,10 +24,11 @@ export function slackSocket(): string {
   return process.env.SLACK_GATEWAY_SOCKET ?? join(runtime, "slack-gateway.sock");
 }
 
-export async function postToSlack(household: Household, text: string, opts: { buttons?: SlackButton[]; threadTs?: string } = {}): Promise<SlackRef | null> {
+// With threadTs and broadcast, the reply is also shown in the channel.
+export async function postToSlack(household: Household, text: string, opts: { buttons?: SlackButton[]; threadTs?: string; broadcast?: boolean } = {}): Promise<SlackRef | null> {
   const bot = household.config.slack?.bot;
   if (!bot || !existsSync(slackSocket())) return null;
-  return (await call("/post", { bot, text, buttons: opts.buttons ?? [], threadTs: opts.threadTs })) as SlackRef;
+  return (await call("/post", { bot, text, buttons: opts.buttons ?? [], threadTs: opts.threadTs, broadcast: opts.broadcast ?? false })) as SlackRef;
 }
 
 export async function updateSlack(household: Household, ref: SlackRef, text: string, buttons: SlackButton[] = []): Promise<void> {
