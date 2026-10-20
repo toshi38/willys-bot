@@ -12,6 +12,7 @@ import { postToSlack, type SlackButton, type SlackRef } from "../notify/slack.ts
 
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 const weekKey = (pickup: Date) => `slack.week.${localDate(pickup)}`;
+const STARTING = "starting";
 
 // The next pickup day on or after `now`, still today until the pickup
 // window has closed.
@@ -27,18 +28,34 @@ export function nextPickup(household: Household, now = new Date()): Date {
   throw new Error("no pickup day in the next week");
 }
 
-// The thread for the shop `now` belongs to, started on first use.
+// The thread for the shop `now` belongs to, started on first use. Only the
+// process that claims the week starts its thread; another one running at
+// the same moment waits for it.
 export async function weekThread(ctx: Context, now = new Date()): Promise<SlackRef | null> {
   const pickup = nextPickup(ctx.household, now);
-  const saved = ctx.store.get(weekKey(pickup));
-  if (saved) return JSON.parse(saved) as SlackRef;
+  const key = weekKey(pickup);
+  if (!ctx.store.claim(key, STARTING)) {
+    for (let i = 0; i < 20; i++) {
+      const saved = ctx.store.get(key);
+      if (saved && saved !== STARTING) return JSON.parse(saved) as SlackRef;
+      if (!saved) break;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    return null;
+  }
   const label = pickup.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
-  const ref = await postToSlack(
-    ctx.household,
-    `**Weekly shop: pickup ${label}**\nEverything about this shop goes in this thread: the plan, changes to the list, pantry and preferences, emails, and the order.`,
-  );
-  if (ref) ctx.store.set(weekKey(pickup), JSON.stringify(ref));
-  return ref;
+  try {
+    const ref = await postToSlack(
+      ctx.household,
+      `**Weekly shop: pickup ${label}**\nEverything about this shop goes in this thread: the plan, changes to the list, pantry and preferences, emails, and the order.`,
+    );
+    if (ref) ctx.store.set(key, JSON.stringify(ref));
+    else ctx.store.delete(key);
+    return ref;
+  } catch (err) {
+    ctx.store.delete(key);
+    throw err;
+  }
 }
 
 // Posts in this week's thread. Null when the household has no Slack.
@@ -64,15 +81,18 @@ export async function tellHousehold(ctx: Context, email: OutgoingEmail, slackTex
 // late into the wrong shop.
 export async function postChanges(ctx: Context): Promise<void> {
   if (!ctx.household.config.slack) return;
-  const changes = ctx.store.unpostedChanges();
+  const changes = ctx.store.claimChanges();
   if (!changes.length) return;
   const cutoff = Date.now() - 7 * 86_400_000;
   const fresh = changes.filter((c) => new Date(c.at).getTime() >= cutoff);
-  if (fresh.length) {
+  if (!fresh.length) return;
+  try {
     const ref = await postToWeek(ctx, ["**Changes**", ...fresh.map((c) => `- ${c.by} ${c.text}`)].join("\n"));
-    if (!ref) return;
+    if (!ref) ctx.store.releaseChanges(fresh.map((c) => c.id));
+  } catch (err) {
+    ctx.store.releaseChanges(fresh.map((c) => c.id));
+    throw err;
   }
-  ctx.store.markChangesPosted(changes.map((c) => c.id));
 }
 
 // Slack is an extra channel: a failure there is logged and never stops the

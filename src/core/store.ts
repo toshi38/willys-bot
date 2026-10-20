@@ -278,17 +278,22 @@ export class Store {
     this.#db.prepare(`INSERT INTO changes (at, by, text) VALUES (?, ?, ?)`).run(now(), by, text);
   }
 
-  unpostedChanges(): { id: number; at: string; by: string; text: string }[] {
+  // Takes the changes nobody has posted yet, marking them in the same
+  // statement, so two processes never post the same change.
+  claimChanges(): { id: number; at: string; by: string; text: string }[] {
     return this.#db
-      .prepare(`SELECT id, at, by, text FROM changes WHERE posted = 0 ORDER BY id`)
+      .prepare(`UPDATE changes SET posted = 1 WHERE posted = 0 RETURNING id, at, by, text`)
       .all()
-      .map((r) => ({ id: Number(r.id), at: String(r.at), by: String(r.by), text: String(r.text) }));
+      .map((r) => ({ id: Number(r.id), at: String(r.at), by: String(r.by), text: String(r.text) }))
+      .sort((a, b) => a.id - b.id);
   }
 
-  markChangesPosted(ids: number[]): void {
-    const stmt = this.#db.prepare(`UPDATE changes SET posted = 1 WHERE id = ?`);
+  // Hands claimed changes back when posting them failed.
+  releaseChanges(ids: number[]): void {
+    const stmt = this.#db.prepare(`UPDATE changes SET posted = 0 WHERE id = ?`);
     for (const id of ids) stmt.run(id);
   }
+
 
   // Products and prices
 
@@ -446,6 +451,16 @@ export class Store {
   get(key: string): string | null {
     const r = this.#db.prepare(`SELECT value FROM kv WHERE key = ?`).get(key);
     return r ? String(r.value) : null;
+  }
+
+  // Sets a key only if it is unset; true when this call set it. Used to
+  // make sure only one process starts something, such as a week's thread.
+  claim(key: string, value: string): boolean {
+    return this.#db.prepare(`INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING`).run(key, value).changes > 0;
+  }
+
+  delete(key: string): void {
+    this.#db.prepare(`DELETE FROM kv WHERE key = ?`).run(key);
   }
 
   set(key: string, value: string): void {

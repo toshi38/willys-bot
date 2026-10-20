@@ -7,7 +7,7 @@ import { test } from "node:test";
 import type { Context } from "../core/context.ts";
 import type { Household } from "../core/household.ts";
 import { Store } from "../core/store.ts";
-import { nextPickup, postChanges, postToWeek } from "./week.ts";
+import { nextPickup, postChanges, postToWeek, weekThread } from "./week.ts";
 
 const household = {
   id: "test",
@@ -75,4 +75,19 @@ test("logged changes are posted once, as one message, and the bot's own restocki
   const changes = posts.filter((p) => String(p.text).startsWith("**Changes**"));
   assert.equal(changes.length, 1);
   assert.equal(changes[0].text, "**Changes**\n- Carin added 2 x milk to the list\n- Stephen marked rice as low in the pantry\n- Stephen removed 2 x milk from the list");
+});
+
+test("two processes posting at once start one thread and post each change once", async (t) => {
+  const posts = await fakeGateway(t);
+  const dir = mkdtempSync(join(tmpdir(), "db-"));
+  const a = new Store(join(dir, "db.sqlite"));
+  const b = new Store(join(dir, "db.sqlite"));
+  const ctxA = { store: a, household } as unknown as Context;
+  const ctxB = { store: b, household } as unknown as Context;
+  const [ta, tb] = await Promise.all([weekThread(ctxA), weekThread(ctxB)]);
+  assert.deepEqual(ta, tb);
+  a.addListItem({ text: "rice", addedBy: "Carin" });
+  await Promise.all([postChanges(ctxA), postChanges(ctxB)]);
+  assert.equal(posts.filter((p) => String(p.text).startsWith("**Weekly shop")).length, 1);
+  assert.equal(posts.filter((p) => String(p.text).startsWith("**Changes**")).length, 1);
 });
