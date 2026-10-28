@@ -31,10 +31,12 @@ export async function postToSlack(household: Household, text: string, opts: { bu
   return (await call("/post", { bot, text, buttons: opts.buttons ?? [], threadTs: opts.threadTs, broadcast: opts.broadcast ?? false })) as SlackRef;
 }
 
-export async function updateSlack(household: Household, ref: SlackRef, text: string, buttons: SlackButton[] = []): Promise<void> {
+// False when nothing was updated because the gateway is not running.
+export async function updateSlack(household: Household, ref: SlackRef, text: string, buttons: SlackButton[] = []): Promise<boolean> {
   const bot = household.config.slack?.bot;
-  if (!bot || !existsSync(slackSocket())) return;
+  if (!bot || !existsSync(slackSocket())) return false;
   await call("/update", { bot, channel: ref.channel, ts: ref.ts, text, buttons });
+  return true;
 }
 
 function call(path: string, body: unknown): Promise<unknown> {

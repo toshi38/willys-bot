@@ -42,7 +42,12 @@ export async function handleInbox(ctx: Context, opts: { dryRun?: boolean } = {})
     if (!opts.dryRun) store.set(SINCE_KEY, start);
   }
   const since = new Date(Math.max(new Date(start).getTime(), Date.now() - LOOKBACK_DAYS * 86_400_000));
-  if (!opts.dryRun) await expireWeeks(ctx);
+  if (!opts.dryRun) {
+    await expireWeeks(ctx);
+    // Catch the Slack post up on changes it missed (the gateway was down).
+    const open = store.openWeek();
+    if (open) await toSlack(() => announceChanges(ctx, open.id));
+  }
   const log: string[] = [];
   const received = (await listReceived(household, since)).filter((e) => addressedTo(e, bot)).reverse();
   for (const summary of received) {

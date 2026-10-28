@@ -132,8 +132,7 @@ async function announce(ctx: Context, week: Week, emailIntro: string | undefined
   const post = slackPost(ctx, week.id);
   if (post) {
     try {
-      await updateSlack(household, post, slackPlanText(ctx, week), planButtons(week));
-      shown = true;
+      shown = (await updateSlack(household, post, slackPlanText(ctx, week), planButtons(week))) || shown;
     } catch (err) {
       // Not marked as shown, so the next change or run tries again.
       console.error(`Slack: ${err instanceof Error ? err.message : err}`);
