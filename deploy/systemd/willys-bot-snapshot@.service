@@ -2,6 +2,7 @@
 Description=food-bot: record today's Willys offers for the price history (%i)
 After=network-online.target
 Wants=network-online.target
+OnFailure=willys-bot-alert@%i.service
 
 [Service]
 Type=oneshot

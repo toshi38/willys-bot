@@ -1,0 +1,14 @@
+[Unit]
+Description=food-bot: email the operator that a run failed (%i)
+
+[Service]
+Type=oneshot
+UMask=0077
+WorkingDirectory=%h/code/willys-bot
+Environment=WILLYS_BOT_HOUSEHOLD=%i
+Environment=WILLYS_BOT_DATA=%h/.local/state/willys-bot
+Environment=WILLYS_BOT_HOUSEHOLDS=%h/.config/willys-bot/households
+LoadCredentialEncrypted=willys-bot-resend-key:%h/.config/credstore.encrypted/willys-bot-resend-key
+# systemd passes the failed unit's name in MONITOR_UNIT.
+ExecStart=/usr/bin/node --no-warnings=ExperimentalWarning src/cli.ts alert
+TimeoutStartSec=120

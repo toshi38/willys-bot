@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Context } from "./context.ts";
 
@@ -16,10 +16,14 @@ export interface ClaudeRun {
   // Who the MCP server records as making changes.
   member: string;
   readOnly: boolean;
+  // The week the week tools work on, instead of the open one.
+  week?: string;
 }
 
 export async function runClaude(ctx: Context, run: ClaudeRun): Promise<unknown> {
-  const mcpConfig = join(ctx.store.dir, `mcp-${run.readOnly ? "read" : "write"}.json`);
+  // One config file per run, since runs for different weeks or members can
+  // overlap.
+  const mcpConfig = join(ctx.store.dir, `mcp-${process.pid}-${Date.now()}.json`);
   const root = new URL("../../", import.meta.url).pathname;
   writeFileSync(
     mcpConfig,
@@ -34,6 +38,7 @@ export async function runClaude(ctx: Context, run: ClaudeRun): Promise<unknown> 
             "--household", ctx.household.id,
             "--member", run.member,
             ...(run.readOnly ? ["--read-only"] : []),
+            ...(run.week ? ["--week", run.week] : []),
           ],
           env: { ...(process.env.WILLYS_BOT_DATA ? { WILLYS_BOT_DATA: process.env.WILLYS_BOT_DATA } : {}), ...(process.env.WILLYS_BOT_HOUSEHOLDS ? { WILLYS_BOT_HOUSEHOLDS: process.env.WILLYS_BOT_HOUSEHOLDS } : {}) },
         },
@@ -60,9 +65,13 @@ export async function runClaude(ctx: Context, run: ClaudeRun): Promise<unknown> 
     const timer = setTimeout(() => child.kill("SIGTERM"), 30 * 60_000);
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
-    child.on("error", reject);
+    child.on("error", (err) => {
+      rmSync(mcpConfig, { force: true });
+      reject(err);
+    });
     child.on("close", (code) => {
       clearTimeout(timer);
+      rmSync(mcpConfig, { force: true });
       try {
         const out = JSON.parse(stdout) as { is_error?: boolean; structured_output?: unknown; result?: string };
         if (out.is_error || code !== 0) return reject(new Error(`claude exited ${code}: ${out.result ?? stderr}`));

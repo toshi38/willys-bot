@@ -2,9 +2,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { parseArgs } from "node:util";
 import { openContext } from "../core/context.ts";
 import { householdId, memberByLogin } from "../core/household.ts";
-import type { PantryStatus } from "../core/store.ts";
-import { decide, propose } from "../plan/weekly.ts";
-import { homePage, listPage, offersPage, page, pantryPage, planDetail, plansTable, productPage } from "./views.ts";
+import type { PantryStatus, Week } from "../core/store.ts";
+import { runIntake } from "../plan/inbox.ts";
+import { announceChanges, decide, planWeek, redraftWeek } from "../plan/weekly.ts";
+import { homePage, listPage, offersPage, page, pantryPage, productPage, weekDetail, weeksTable, type WeekView } from "./views.ts";
 
 // The household's web UI: plans and past menus, the shopping list, the
 // pantry, offers and price history. It listens on localhost only and is
@@ -25,18 +26,24 @@ const { store, household } = ctx;
 
 // Plan making and cart filling take a minute or more, so they run in the
 // background, one at a time; the page says so until they finish.
-let job: { label: string; planId: string | null } | null = null;
+let job: { label: string; weekId: string | null } | null = null;
 let lastResult: string | null = null;
 
 // Starts a job unless one is already running; the page shows the running
 // job either way.
-function runJob(label: string, planId: string | null, work: () => Promise<string[] | unknown>): void {
+function runJob(label: string, weekId: string | null, work: () => Promise<string[] | string | unknown>): void {
   if (job) return;
-  job = { label, planId };
+  job = { label, weekId };
   work()
-    .then((r) => (lastResult = Array.isArray(r) ? r.join(". ") : `${label}: done`))
+    .then((r) => (lastResult = Array.isArray(r) ? r.join(". ") : typeof r === "string" ? r : `${label}: done`))
     .catch((err: unknown) => (lastResult = `${label} failed: ${err instanceof Error ? err.message : String(err)}`))
     .finally(() => (job = null));
+}
+
+function view(week: Week): WeekView {
+  const dishes = store.dishes(week.id);
+  const recipes = new Map(dishes.map((d) => (d.recipeId ? store.recipe(d.recipeId) : null)).filter((r) => r !== null).map((r) => [r.id, r] as const));
+  return { week, dishes, items: store.items(week.id), recipes };
 }
 
 function identify(req: IncomingMessage): string | null {
@@ -107,37 +114,48 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return redirect(res, "/pantry");
     }
     if (path === "/plans/new") {
-      runJob("making a new plan", null, async () => [`New plan ${(await propose(ctx)).id} sent`]);
+      runJob("planning the next pickup", null, async () => (await planWeek(ctx)).message);
       return redirect(res, "/");
     }
     const action = path.match(/^\/plans\/([\w-]+)\/(approve|reject|change)$/);
     if (action) {
-      const plan = store.plan(action[1]);
-      if (!plan) return send(res, 404, page(opts("/plans"), "Not found", "<p>No such plan.</p>"));
-      const decision =
-        action[2] === "approve" ? { kind: "approve" as const }
-        : action[2] === "reject" ? { kind: "reject" as const }
-        : { kind: "change" as const, feedback: form.get("feedback")?.trim() ?? "" };
-      if (decision.kind === "change" && !decision.feedback) return redirect(res, `/plans/${plan.id}`);
-      const label = decision.kind === "approve" ? "filling the cart and booking a slot" : decision.kind === "reject" ? "skipping this week" : "making a revised plan";
-      runJob(label, plan.id, () => decide(ctx, plan, decision, member));
-      return redirect(res, `/plans/${plan.id}`);
+      const week = store.week(action[1]);
+      if (!week) return send(res, 404, page(opts("/plans"), "Not found", "<p>No such week.</p>"));
+      const by = household.config.members.find((m) => m.name === member)?.email ?? member;
+      if (action[2] === "change") {
+        const text = form.get("feedback")?.trim() ?? "";
+        if (!text) return redirect(res, `/plans/${week.id}`);
+        runJob("making the change", week.id, async () => {
+          const outcome = await runIntake(ctx, { name: member, via: "web", subject: "", text, week, thread: [] });
+          if (outcome.redraft) {
+            const result = await redraftWeek(ctx, week, outcome.redraft, by);
+            if (!result.done) return `${outcome.reply} (I could not start new dishes: ${result.message}.)`;
+          } else {
+            await announceChanges(ctx, week.id);
+          }
+          return outcome.reply || outcome.summary;
+        });
+        return redirect(res, `/plans/${week.id}`);
+      }
+      const kind = action[2] === "approve" ? "approve" : "skip";
+      runJob(kind === "approve" ? "filling the cart and booking a slot" : "skipping this week", week.id, () => decide(ctx, week, kind, by));
+      return redirect(res, `/plans/${week.id}`);
     }
     return send(res, 404, page(opts(""), "Not found", "<p>Not found.</p>"));
   }
 
   if (path === "/") {
-    const recent = store.plans(["sent", "approved", "applied", "rejected", "failed"]);
-    return send(res, 200, page(opts("/"), "Home", homePage(recent[0] ?? null, recent.slice(1, 8), store.listItems(), store.pantryItems())));
+    const recent = store.weeks(8).map(view);
+    return send(res, 200, page(opts("/"), "Home", homePage(recent[0] ?? null, recent.slice(1), store.listItems(), store.pantryItems())));
   }
   if (path === "/plans") {
-    return send(res, 200, page(opts("/plans"), "Plans", `<h1>Plans and menus</h1>${plansTable(store.plans(["draft", "sent", "approved", "applied", "rejected", "failed"]))}`));
+    return send(res, 200, page(opts("/plans"), "Plans", `<h1>Plans and menus</h1>${weeksTable(store.weeks(52).map(view))}`));
   }
   const planMatch = path.match(/^\/plans\/([\w-]+)$/);
   if (planMatch) {
-    const plan = store.plan(planMatch[1]);
-    if (!plan) return send(res, 404, page(opts("/plans"), "Not found", "<p>No such plan.</p>"));
-    return send(res, 200, page(opts("/plans"), "Plan", planDetail(plan, job?.planId === plan.id)));
+    const week = store.week(planMatch[1]);
+    if (!week) return send(res, 404, page(opts("/plans"), "Not found", "<p>No such week.</p>"));
+    return send(res, 200, page(opts("/plans"), "Plan", weekDetail(view(week), job?.weekId === week.id)));
   }
   if (path === "/list") return send(res, 200, page(opts("/list"), "List", listPage(store.listItems(), (c) => store.productName(c))));
   if (path === "/pantry") return send(res, 200, page(opts("/pantry"), "Pantry", pantryPage(store.pantryItems())));

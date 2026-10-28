@@ -6,12 +6,12 @@ import { buildServer } from "./tools.ts";
 
 // Local MCP server over stdio, for Claude Code or Claude Desktop on a
 // machine that has the household's data. --member names who is talking so
-// list items record who added them.
+// list items record who added them; --week pins the week tools to one week.
 
-const { values } = parseArgs({ options: { household: { type: "string" }, member: { type: "string" }, "read-only": { type: "boolean" } } });
+const { values } = parseArgs({ options: { household: { type: "string" }, member: { type: "string" }, "read-only": { type: "boolean" }, week: { type: "string" } } });
 const ctx = openContext(householdId(values.household));
 const member = values.member ?? process.env.WILLYS_BOT_MEMBER ?? ctx.household.config.members[0].name;
-const server = buildServer(ctx, member, { readOnly: values["read-only"] ?? false });
+const server = buildServer(ctx, member, { readOnly: values["read-only"] ?? false, week: values.week });
 await server.connect(new StdioServerTransport());
 
 const shutdown = () => {

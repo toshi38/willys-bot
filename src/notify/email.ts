@@ -15,9 +15,11 @@ export interface OutgoingEmail {
   markdown: string;
   // Message-ID this email answers, for threading.
   inReplyTo?: string;
+  // Addresses to send to instead of every member.
+  to?: string[];
 }
 
-// Sends to every household member and returns the Message-ID set on the
+// Sends to every household member (or `to`) and returns the Message-ID set on the
 // email, so later emails can thread under it.
 export async function sendToMembers(household: Household, email: OutgoingEmail, fetchImpl: typeof fetch = fetch): Promise<string> {
   const mail = household.config.mail;
@@ -33,7 +35,7 @@ export async function sendToMembers(household: Household, email: OutgoingEmail, 
     headers: { "Content-Type": "application/json", "Idempotency-Key": messageId },
     body: JSON.stringify({
       from: `${mail.name} <${mail.address}>`,
-      to: household.config.members.map((m) => `${m.name} <${m.email}>`),
+      to: email.to ?? household.config.members.map((m) => `${m.name} <${m.email}>`),
       subject: email.subject,
       headers,
       text: email.markdown,
@@ -86,7 +88,10 @@ export async function getReceived(household: Household, id: string, fetchImpl: t
 
 async function call(household: Household, path: string, fetchImpl: typeof fetch, init: RequestInit = {}): Promise<unknown> {
   const key = readSecret(household.config.mail.secret, "key");
-  const res = await fetchImpl(`${API}${path}`, { ...init, headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${key}` } });
+  const request = () => fetchImpl(`${API}${path}`, { ...init, headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${key}` } });
+  // Reads are retried after a network failure; a send is not, but it
+  // carries an Idempotency-Key, so a retry by the caller cannot send twice.
+  const res = init.method && init.method !== "GET" ? await request() : await withRetry(request);
   const body = (await res.json().catch(() => ({}))) as { message?: string };
   if (!res.ok) throw new Error(`Resend ${init.method ?? "GET"} ${path.split("?")[0]} failed (${res.status}): ${body.message ?? "no details"}`);
   return body;
@@ -166,4 +171,17 @@ export function classifyReply(text: string): Decision {
   }
   if (/^(no|nej|reject|stop|cancel|skip|avbryt)\b/.test(first)) return { kind: "reject" };
   return { kind: "change", feedback: text.trim() };
+}
+
+// Retries a request that failed on the network (not with an HTTP error),
+// waiting a little longer each time.
+async function withRetry(f: () => Promise<Response>, attempts = 3, delayMs = 2000): Promise<Response> {
+  for (let i = 1; ; i++) {
+    try {
+      return await f();
+    } catch (err) {
+      if (i >= attempts) throw err;
+      await new Promise((r) => setTimeout(r, delayMs * i));
+    }
+  }
 }

@@ -33,7 +33,7 @@ test("list items move from open to ordered", () => {
   const store = new Store(":memory:");
   const item = store.addListItem({ text: "diskmedel", addedBy: "Carin" });
   assert.equal(store.listItems().length, 1);
-  store.updateListItem(item.id, { status: "ordered", planId: "p1" });
+  store.updateListItem(item.id, { status: "ordered", weekId: "2026-10-30" });
   assert.equal(store.listItems().length, 0);
 });
 

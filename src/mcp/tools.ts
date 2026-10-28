@@ -17,13 +17,13 @@ const text = (value: unknown) => ({
 const PREFERENCES_HISTORY = "preferences.history";
 
 // readOnly leaves out the list-changing tools, for the weekly planner.
-export function buildServer(ctx: Context, member: string, { readOnly = false } = {}): McpServer {
+export function buildServer(ctx: Context, member: string, { readOnly = false, week }: { readOnly?: boolean; week?: string } = {}): McpServer {
   const { store, willys, household } = ctx;
   const server = new McpServer(
     { name: "willys-bot", version: "0.1.0" },
     {
       instructions: `Shared grocery list and Willys price lookup for ${household.config.name}. You are talking to ${member}.
-Items added here are bought in the next weekly Willys order, which a household member approves by email.
+Items added to the list go into the next weekly shop. Once a week's shop is drafted, change it with the week_ tools and dish_ tools; a household member approves it by email or Slack.
 When someone asks for something, search for matching products, compare the options on price per unit and the price verdict, and suggest one, but let them choose when it is a matter of taste.
 The pantry is what the household keeps at home. The weekly planner never buys pantry items marked "have" and restocks ones marked "low" or "out". When someone says they used up or are running low on something, update the pantry with pantry_set rather than the shopping list, unless they need it this week.
 If they share a photo of a handwritten list, read it, tell them what you read (flag words you are unsure of), and add the items with list_add once they confirm.
@@ -109,6 +109,139 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
     "pantry_remove",
     { description: "Stop tracking a pantry entry.", inputSchema: { name: z.string().min(1) } },
     async ({ name }) => text(store.removePantryItem(name, member) ? `Removed ${name}` : `No pantry entry ${name}`),
+  );
+
+  // This week's shop: the open week's dishes and items, edited one at a
+  // time so nothing else changes.
+  // With `week` set (the week a message is about), the tools only touch
+  // that week; otherwise the open one.
+  const openWeek = () => {
+    const w = week ? store.week(week) : store.openWeek();
+    if (!w) throw new Error("No week is open for changes: it has been approved or skipped, or not drafted yet.");
+    if (w.status !== "open") throw new Error(`The week for pickup ${w.id} is ${w.status}, so it cannot be changed.`);
+    return w;
+  };
+  const weekView = () => {
+    const w = openWeek();
+    return {
+      week: { pickup: w.id, status: w.status, summary: w.summary, notes: w.notes },
+      dishes: store.dishes(w.id).map((d) => ({ id: d.id, name: d.name, portions: d.portions, why: d.why, recipeId: d.recipeId })),
+      items: store.items(w.id).map((i) => ({
+        id: i.id, qty: i.qty, product: i.name ?? i.productCode, productCode: i.productCode, unitPrice: i.unitPrice,
+        source: i.source, requestedBy: i.requestedBy, dishId: i.dishId, reason: i.reason,
+      })),
+    };
+  };
+
+  server.registerTool(
+    "week_view",
+    {
+      description:
+        "Show this week's shop: its dishes and every item with its id. source says why an item is there: request (a member asked for it, requestedBy says who), dish (an ingredient of dishId) or staple (the planner's restock or basic).",
+      inputSchema: {},
+    },
+    async () => text(weekView()),
+  );
+
+  if (!readOnly) server.registerTool(
+    "week_add_item",
+    {
+      description:
+        "Add a product to this week's shop. Without dishId it is a request from the person you are talking to, and stays until a member removes it. With dishId it is an ingredient of that dish. Find the productCode with search_products first.",
+      inputSchema: {
+        productCode: z.string(),
+        qty: z.number().int().min(1).max(50),
+        reason: z.string().describe("What it is for"),
+        dishId: z.number().int().optional(),
+        restocks: z.string().optional().describe("Exact name of the pantry entry this restocks"),
+      },
+    },
+    async ({ productCode, qty, reason, dishId, restocks }) => {
+      const w = openWeek();
+      if (!store.productName(productCode)) throw new Error(`Unknown product ${productCode}: find it with search_products first`);
+      const dish = dishId !== undefined ? store.dish(dishId) : null;
+      if (dishId !== undefined && (dish?.weekId !== w.id || dish.removedAt)) throw new Error(`Dish ${dishId} is not in this week`);
+      if (restocks && !store.pantryItems().some((p) => p.name === restocks)) throw new Error(`No pantry entry named "${restocks}": use the exact name from pantry_view`);
+      const item = store.addItem(
+        w.id,
+        { productCode, qty, reason, source: dishId !== undefined ? "dish" : "request", requestedBy: dishId !== undefined ? null : member, dishId: dishId ?? null, restocks: restocks ?? null },
+        member,
+      );
+      return text(item);
+    },
+  );
+
+  if (!readOnly) server.registerTool(
+    "week_set_quantity",
+    { description: "Change how many of an item in this week's shop to buy.", inputSchema: { itemId: z.number().int(), qty: z.number().int().min(1).max(50) } },
+    async ({ itemId, qty }) => {
+      const w = openWeek();
+      if (store.item(itemId)?.weekId !== w.id) throw new Error(`Item ${itemId} is not in this week`);
+      return text(store.setItemQuantity(itemId, qty, member));
+    },
+  );
+
+  if (!readOnly) server.registerTool(
+    "week_remove_item",
+    {
+      description: "Remove an item from this week's shop. Only remove a request (source request) when a member asked for that.",
+      inputSchema: { itemId: z.number().int() },
+    },
+    async ({ itemId }) => {
+      const w = openWeek();
+      if (store.item(itemId)?.weekId !== w.id) throw new Error(`Item ${itemId} is not in this week`);
+      return text(store.removeItem(itemId, member) ? `Removed item ${itemId}` : `Item ${itemId} was already removed`);
+    },
+  );
+
+  if (!readOnly) server.registerTool(
+    "dish_add",
+    {
+      description:
+        "Add a dish to this week's shop, with its recipe, or reuse a known recipe by recipeId. Then add its ingredients with week_add_item and the dish's id. To swap a dish, dish_remove the old one first.",
+      inputSchema: {
+        name: z.string().min(1),
+        portions: z.number().int().min(1),
+        why: z.string().describe("Why this dish: offers used, flavour, protein, or what the member asked for"),
+        recipeId: z.number().int().optional(),
+        ingredients: z.array(z.string()).optional().describe("With amounts, for the portions; needed without recipeId"),
+        method: z.string().optional().describe("A few short numbered steps; needed without recipeId"),
+      },
+    },
+    async ({ name, portions, why, recipeId, ingredients, method }) => {
+      const w = openWeek();
+      const recipe =
+        recipeId !== undefined
+          ? store.recipe(recipeId)
+          : ingredients?.length && method
+            ? store.saveRecipe({ name, servings: portions, ingredients: ingredients.join("\n"), method }, member)
+            : null;
+      if (!recipe) throw new Error(recipeId !== undefined ? `No recipe ${recipeId}` : "Give the recipe's ingredients and method, or a recipeId");
+      return text(store.addDish(w.id, { name, portions, why, recipeId: recipe.id }, member));
+    },
+  );
+
+  if (!readOnly) server.registerTool(
+    "dish_remove",
+    {
+      description: "Remove a dish from this week's shop, with the ingredients bought for it. Requests stay.",
+      inputSchema: { dishId: z.number().int() },
+    },
+    async ({ dishId }) => {
+      const w = openWeek();
+      if (store.dish(dishId)?.weekId !== w.id) throw new Error(`Dish ${dishId} is not in this week`);
+      store.removeDish(dishId, member);
+      return text(weekView());
+    },
+  );
+
+  server.registerTool(
+    "recipe_view",
+    {
+      description: "Read a recipe by id, or search the household's recipes by name.",
+      inputSchema: { id: z.number().int().optional(), search: z.string().optional() },
+    },
+    async ({ id, search }) => text(id !== undefined ? (store.recipe(id) ?? `No recipe ${id}`) : store.recipes(search).map((r) => ({ id: r.id, name: r.name, servings: r.servings }))),
   );
 
   server.registerTool(

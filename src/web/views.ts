@@ -1,6 +1,5 @@
 import type { Household } from "../core/household.ts";
-import type { ListItem, PantryItem, PlanRow, PriceObservation } from "../core/store.ts";
-import type { Plan } from "../plan/planner.ts";
+import type { Dish, ListItem, PantryItem, PriceObservation, Recipe, Week, WeekItem } from "../core/store.ts";
 
 // Server-rendered HTML for the web UI. Every value from the database or a
 // request goes through esc(); the only markup is built here.
@@ -73,44 +72,59 @@ export function page(opts: PageOpts, title: string, body: string): string {
 
 const badge = (status: string) => `<span class="badge s-${esc(status)}">${esc(status)}</span>`;
 
-export function planSummaryRow(p: PlanRow): string {
-  const plan = p.plan as Plan;
-  const total = p.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0);
-  return `<tr><td><a href="/plans/${esc(p.id)}">${esc(day(p.createdAt))}</a></td><td>${badge(p.status)}</td>
-<td>${(plan.meals ?? []).map((m) => esc(m.dish)).join("<br>")}</td><td class="num hide-sm">${kr(total)}</td></tr>`;
+// A week with what its pages show.
+export interface WeekView {
+  week: Week;
+  dishes: Dish[];
+  items: WeekItem[];
+  recipes: Map<number, Recipe>;
 }
 
-export function plansTable(plans: PlanRow[]): string {
-  if (!plans.length) return `<p class="muted">No plans yet.</p>`;
-  return `<table><tr><th>Made</th><th>Status</th><th>Dishes</th><th class="num hide-sm">Estimate</th></tr>${plans.map(planSummaryRow).join("")}</table>`;
+const total = (items: WeekItem[]) => items.reduce((s, i) => s + i.qty * (i.unitPrice ?? 0), 0);
+const sourceLabel = (i: WeekItem, dishes: Dish[]) =>
+  i.source === "request" ? `asked for${i.requestedBy ? ` by ${i.requestedBy}` : ""}` : i.source === "dish" ? (dishes.find((d) => d.id === i.dishId)?.name ?? "dish") : "basic or restock";
+
+export function weekSummaryRow(v: WeekView): string {
+  return `<tr><td><a href="/plans/${esc(v.week.id)}">${esc(v.week.id)}</a></td><td>${badge(v.week.status)}</td>
+<td>${v.dishes.map((d) => esc(d.name)).join("<br>")}</td><td class="num hide-sm">${kr(total(v.items))}</td></tr>`;
 }
 
-export function planDetail(p: PlanRow, busy: boolean): string {
-  const plan = p.plan as Plan;
-  const total = p.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0);
+export function weeksTable(weeks: WeekView[]): string {
+  if (!weeks.length) return `<p class="muted">No weeks yet.</p>`;
+  return `<table><tr><th>Pickup</th><th>Status</th><th>Dishes</th><th class="num hide-sm">Estimate</th></tr>${weeks.map(weekSummaryRow).join("")}</table>`;
+}
+
+export function weekDetail(v: WeekView, busy: boolean): string {
+  const { week: w, dishes, items } = v;
   const decision =
-    p.status === "sent"
+    w.status === "open"
       ? busy
         ? `<p class="muted">Working on it: refresh in a minute.</p>`
         : `<div class="card"><h2 style="margin-top:0">Your decision</h2>
-<div class="row"><form method="post" action="/plans/${esc(p.id)}/approve" class="inline"><button class="primary">Approve: fill the cart and book a slot</button></form>
-<form method="post" action="/plans/${esc(p.id)}/reject" class="inline"><button>Skip this week</button></form></div>
-<form method="post" action="/plans/${esc(p.id)}/change"><h2>Or ask for changes</h2><textarea name="feedback" required placeholder="Less chicken, add a curry, we have guests on Saturday"></textarea><p><button>Send changes and make a new plan</button></p></form></div>`
+<div class="row"><form method="post" action="/plans/${esc(w.id)}/approve" class="inline"><button class="primary">Approve: fill the cart and book a slot</button></form>
+<form method="post" action="/plans/${esc(w.id)}/reject" class="inline"><button>Skip this week</button></form></div>
+<form method="post" action="/plans/${esc(w.id)}/change"><h2>Or ask for a change</h2><textarea name="feedback" required placeholder="2 skyr instead of 1, swap the stir-fry for a curry"></textarea><p><button>Make the change</button></p><p class="muted">Only what you ask for changes; the rest stays.</p></form></div>`
       : "";
-  return `<h1>Plan ${badge(p.status)}</h1>
-<p class="muted">Made ${esc(day(p.createdAt))}${p.decidedBy ? `. Decided by ${esc(p.decidedBy)} ${esc(day(p.decidedAt))}` : ""}${p.appliedAt ? `. Cart filled ${esc(day(p.appliedAt))}` : ""}</p>
-${p.decisionNote ? `<div class="card"><strong>Note:</strong> ${esc(p.decisionNote)}</div>` : ""}
-${p.error ? `<div class="card flash"><strong>Error:</strong> ${esc(p.error)}</div>` : ""}
+  return `<h1>Pickup ${esc(w.id)} ${badge(w.status)}</h1>
+<p class="muted">Drafted ${esc(day(w.createdAt))}${w.decidedBy ? `. Decided by ${esc(w.decidedBy)} ${esc(day(w.decidedAt))}` : ""}${w.appliedAt ? `. Cart filled ${esc(day(w.appliedAt))}` : ""}</p>
+${w.error ? `<div class="card flash"><strong>Error:</strong> ${esc(w.error)}</div>` : ""}
 ${decision}
-<div class="card"><p>${esc(plan.summary)}</p></div>
+<div class="card"><p>${esc(w.summary)}</p></div>
 <h2>Dishes</h2>
-${(plan.meals ?? []).map((m) => `<div class="card"><strong>${esc(m.dish)}</strong> <span class="muted">${esc(m.portions)} portions</span><br>${esc(m.why)}</div>`).join("")}
-<h2>Shopping, about ${kr(total)}</h2>
-<table><tr><th>Qty</th><th>Product</th><th class="num">Price</th><th class="hide-sm">Why</th></tr>
-${p.lines.map((l) => `<tr><td>${esc(l.qty)}</td><td><a href="/product/${esc(encodeURIComponent(l.productCode))}">${esc(l.name)}</a></td><td class="num">${kr(l.unitPrice)}</td><td class="hide-sm muted">${esc(l.reason)}</td></tr>`).join("")}
+${dishes
+  .map((d) => {
+    const r = d.recipeId ? v.recipes.get(d.recipeId) : undefined;
+    const recipe = r
+      ? `<details><summary>Recipe</summary><ul>${r.ingredients.split("\n").filter(Boolean).map((l) => `<li>${esc(l)}</li>`).join("")}</ul><p style="white-space:pre-line">${esc(r.method)}</p></details>`
+      : "";
+    return `<div class="card"><strong>${esc(d.name)}</strong> <span class="muted">${esc(d.portions)} portions</span><br>${esc(d.why)}${recipe}</div>`;
+  })
+  .join("")}
+<h2>Shopping, about ${kr(total(items))}</h2>
+<table><tr><th>Qty</th><th>Product</th><th class="num">Price</th><th class="hide-sm">For</th></tr>
+${items.map((i) => `<tr><td>${esc(i.qty)}</td><td><a href="/product/${esc(encodeURIComponent(i.productCode))}">${esc(i.name ?? i.productCode)}</a></td><td class="num">${i.unitPrice === null ? "" : kr(i.unitPrice)}</td><td class="hide-sm muted">${esc(sourceLabel(i, dishes))}${i.reason ? `: ${esc(i.reason)}` : ""}</td></tr>`).join("")}
 </table>
-${plan.skipped?.length ? `<h2>Not bought</h2><ul>${plan.skipped.map((s) => `<li>List item #${esc(s.listItemId)}: ${esc(s.reason)}</li>`).join("")}</ul>` : ""}
-${plan.notes ? `<h2>Notes</h2><div class="card">${esc(plan.notes)}</div>` : ""}`;
+${w.notes ? `<h2>Notes</h2><div class="card" style="white-space:pre-line">${esc(w.notes)}</div>` : ""}`;
 }
 
 export function listPage(items: ListItem[], productName: (code: string) => string | null): string {
@@ -130,7 +144,7 @@ ${
 <td class="num"><form method="post" action="/list/${esc(i.id)}/remove" class="inline"><button>Remove</button></form></td></tr>`,
         )
         .join("")}</table>`
-    : `<p class="muted">The list is empty. Items added here go into the next weekly plan.</p>`
+    : `<p class="muted">The list is empty. Items added here go into the next weekly shop.</p>`
 }`;
 }
 
@@ -203,17 +217,17 @@ function sparkline(days: string[], series: Array<{ label: string; color: string;
 <div class="muted">${legend} · ${kr(min)} to ${kr(max)}, ${esc(days[0])} to ${esc(days.at(-1))}</div>`;
 }
 
-export function homePage(latest: PlanRow | null, recent: PlanRow[], list: ListItem[], pantry: PantryItem[]): string {
+export function homePage(latest: WeekView | null, recent: WeekView[], list: ListItem[], pantry: PantryItem[]): string {
   const short = pantry.filter((p) => p.status !== "have");
   return `<h1>This week</h1>
-${latest ? `<div class="card"><div class="row" style="justify-content:space-between"><strong>Latest plan</strong>${badge(latest.status)}</div>
-<ul>${((latest.plan as Plan).meals ?? []).map((m) => `<li>${esc(m.dish)}</li>`).join("")}</ul><a href="/plans/${esc(latest.id)}">Open the plan</a></div>` : `<p class="muted">No plan yet.</p>`}
-<form method="post" action="/plans/new" class="row"><button>Make a new plan now</button><span class="muted">Takes about a minute, then it is emailed to everyone.</span></form>
+${latest ? `<div class="card"><div class="row" style="justify-content:space-between"><strong>Pickup ${esc(latest.week.id)}</strong>${badge(latest.week.status)}</div>
+<ul>${latest.dishes.map((d) => `<li>${esc(d.name)}</li>`).join("")}</ul><a href="/plans/${esc(latest.week.id)}">Open the plan</a></div>` : `<p class="muted">No plan yet.</p>`}
+<form method="post" action="/plans/new" class="row"><button>Plan the next pickup now</button><span class="muted">Takes about a minute, then it is emailed to everyone. Does nothing if that week is already planned.</span></form>
 <h2>On the list (${list.length})</h2>
 ${list.length ? `<ul>${list.map((i) => `<li>${esc(i.text)}${i.quantity ? ` × ${esc(i.quantity)}` : ""} <span class="muted">${esc(i.addedBy)}</span></li>`).join("")}</ul>` : `<p class="muted">Nothing yet.</p>`}
 <p><a href="/list">Add to the list</a></p>
 <h2>Running low (${short.length})</h2>
 ${short.length ? `<ul>${short.map((p) => `<li>${esc(p.name)} ${badge(p.status)}</li>`).join("")}</ul>` : `<p class="muted">Nothing marked low or out.</p>`}
 <h2>Earlier menus</h2>
-${plansTable(recent)}`;
+${weeksTable(recent)}`;
 }
