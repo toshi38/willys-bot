@@ -70,4 +70,8 @@ test("a reply follows the language the member wrote in, not the thread's", () =>
   assert.equal(messageLanguage("remove the bananas and the dishwasher stuff"), "English");
   assert.equal(messageLanguage("Ta bort glutenfritt bröd det behöver vi inte"), "Swedish");
   assert.equal(messageLanguage("vi kan ta det till fredag"), "Swedish");
+  assert.equal(messageLanguage("Kan vi ta 2 skyr"), "Swedish");
+  // Swedish product names do not make an English message Swedish.
+  assert.equal(messageLanguage("It used 2 x Kycklinglårfilé 700g and the butternut from the plan"), "English");
+  assert.equal(messageLanguage("lårfilé"), "Swedish");
 });

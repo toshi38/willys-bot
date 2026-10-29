@@ -241,15 +241,17 @@ export async function runIntake(ctx: Context, input: IntakeInput): Promise<z.inf
   return IntakeOutput.parse(output);
 }
 
-// The language a member wrote in: Swedish when the message has Swedish
-// letters or common Swedish words, otherwise English. Decided here rather
-// than left to Claude, which drifts towards the thread's or the
-// preferences' language.
+// The language a member wrote in, from its common words: product names are
+// often Swedish in an English message, so Swedish letters only decide a
+// tie. Decided here rather than left to Claude, which drifts towards the
+// thread's or the preferences' language.
 export function messageLanguage(text: string): "Swedish" | "English" {
-  const t = ` ${text.toLowerCase()} `;
-  if (/[åäö]/.test(t)) return "Swedish";
-  const swedish = [" och ", " jag ", " vi ", " inte ", " det ", " att ", " är ", " kan ", " ska ", " har ", " vill ", " till ", " med ", " för ", " på ", " tack ", " hej ", " nej ", " ja "];
-  return swedish.filter((w) => t.includes(w)).length >= 2 ? "Swedish" : "English";
+  const words = text.toLowerCase().split(/[^a-zåäöé]+/);
+  const count = (list: string[]) => words.filter((w) => list.includes(w)).length;
+  const sv = count(["och", "jag", "vi", "inte", "det", "att", "är", "kan", "ska", "har", "vill", "till", "med", "för", "på", "tack", "hej", "nej", "ja", "som", "en", "ett", "den", "av", "om", "också", "bara", "lite", "mer", "behöver"]);
+  const en = count(["the", "and", "to", "for", "with", "from", "is", "a", "an", "of", "we", "i", "it", "this", "that", "wants", "want", "can", "please", "also", "remove", "add", "swap", "instead", "have", "need", "some", "more", "in", "on", "was", "are"]);
+  if (sv !== en) return sv > en ? "Swedish" : "English";
+  return /[åäö]/i.test(text) ? "Swedish" : "English";
 }
 
 // The start of an email, quoted for the weekly thread.
