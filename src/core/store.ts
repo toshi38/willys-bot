@@ -61,6 +61,22 @@ export interface MailRecord {
   updatedAt: string;
 }
 
+export interface SlackMessage {
+  id: number;
+  at: string;
+  channel: string;
+  ts: string;
+  threadTs: string | null;
+  // The member's email, as Slack verified it.
+  sender: string;
+  name: string;
+  kind: "message" | "action";
+  // The message, or the button's action id and value.
+  text: string;
+  reply: string | null;
+  error: string | null;
+}
+
 export type WeekStatus = "drafting" | "open" | "approved" | "applied" | "skipped" | "failed";
 
 // One weekly shop, keyed by its pickup date. The planner drafts it once;
@@ -271,6 +287,19 @@ export class Store {
         attempts INTEGER NOT NULL DEFAULT 0,
         note TEXT,
         updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS slack_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        ts TEXT NOT NULL,
+        thread_ts TEXT,
+        sender TEXT NOT NULL,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('message', 'action')),
+        text TEXT NOT NULL,
+        reply TEXT,
+        error TEXT
       );
       CREATE TABLE IF NOT EXISTS changes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -771,6 +800,20 @@ export class Store {
       .run(m.id, m.receivedAt, m.sender, m.subject, m.status, m.attempts, m.note, now());
   }
 
+  // Slack messages and button clicks food-bot handled, with its answer, so
+  // what members asked for is on record here and not only in Slack.
+
+  recordSlack(m: Omit<SlackMessage, "id" | "at">): SlackMessage {
+    const row = this.#db
+      .prepare(`INSERT INTO slack_messages (at, channel, ts, thread_ts, sender, name, kind, text, reply, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`)
+      .get(now(), m.channel, m.ts, m.threadTs, m.sender, m.name, m.kind, m.text, m.reply, m.error);
+    return toSlackMessage(row);
+  }
+
+  slackMessages(limit = 50): SlackMessage[] {
+    return this.#db.prepare(`SELECT * FROM slack_messages ORDER BY id DESC LIMIT ?`).all(limit).map(toSlackMessage);
+  }
+
   // Small key/value state: the saved Willys session, the inbox start date.
 
   get(key: string): string | null {
@@ -858,6 +901,23 @@ function toMail(r: Record<string, unknown>): MailRecord {
     attempts: Number(r.attempts),
     note: (r.note as string | null) ?? null,
     updatedAt: String(r.updated_at),
+  };
+}
+
+function toSlackMessage(r: Record<string, unknown> | undefined): SlackMessage {
+  if (!r) throw new Error("missing row");
+  return {
+    id: Number(r.id),
+    at: String(r.at),
+    channel: String(r.channel),
+    ts: String(r.ts),
+    threadTs: (r.thread_ts as string | null) ?? null,
+    sender: String(r.sender),
+    name: String(r.name),
+    kind: r.kind as SlackMessage["kind"],
+    text: String(r.text),
+    reply: (r.reply as string | null) ?? null,
+    error: (r.error as string | null) ?? null,
   };
 }
 

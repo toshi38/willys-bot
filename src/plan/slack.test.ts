@@ -95,3 +95,11 @@ test("a button on a plan from before weeks points to the latest plan", async () 
   const res = await handleSlack({ store, household } as unknown as Context, { type: "action", from: carin, action: { id: "plan.approve", value: "2026-10-20-1d5faf" }, where: where() });
   assert.match(res.reply ?? "", /use the buttons on the latest plan/);
 });
+
+test("every message food-bot handles is recorded with its answer, strangers included", async () => {
+  const store = new Store(":memory:");
+  await handleSlack({ store, household } as unknown as Context, { type: "message", from: { email: "x@evil.test", name: "X" }, text: "add caviar", where: where("2.2"), thread: [] });
+  const [m] = store.slackMessages();
+  assert.deepEqual([m.sender, m.kind, m.text, m.threadTs], ["x@evil.test", "message", "add caviar", "2.2"]);
+  assert.match(m.reply ?? "", /only take requests from the household/);
+});

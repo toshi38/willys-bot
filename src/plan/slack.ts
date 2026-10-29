@@ -25,7 +25,26 @@ export interface SlackResponse {
 }
 
 export async function handleSlack(ctx: Context, req: SlackRequest): Promise<SlackResponse> {
-  const response = await respond(ctx, req);
+  const record = (reply: string | null, error: string | null) =>
+    ctx.store.recordSlack({
+      channel: req.where.channel,
+      ts: req.where.ts,
+      threadTs: req.where.threadTs,
+      sender: req.from.email,
+      name: req.from.name,
+      kind: req.type,
+      text: req.type === "message" ? req.text : `${req.action.id} ${req.action.value}`,
+      reply,
+      error,
+    });
+  let response: SlackResponse;
+  try {
+    response = await respond(ctx, req);
+  } catch (err) {
+    record(null, err instanceof Error ? err.message : String(err));
+    throw err;
+  }
+  record(response.reply ?? null, null);
   // Whatever the message changed goes in this week's thread straight away.
   await toSlack(() => postChanges(ctx));
   return response;
