@@ -103,3 +103,11 @@ test("every message food-bot handles is recorded with its answer, strangers incl
   assert.deepEqual([m.sender, m.kind, m.text, m.threadTs], ["x@evil.test", "message", "add caviar", "2.2"]);
   assert.match(m.reply ?? "", /only take requests from the household/);
 });
+
+test("a request that fails answers with the error in the conversation, and is recorded", async () => {
+  const store = new Store(":memory:");
+  const broken = { store, household: { ...household, config: { ...household.config, members: null } } } as unknown as Context;
+  const res = await handleSlack(broken, { type: "message", from: carin, text: "add milk", where: where("4.4"), thread: [] });
+  assert.match(res.reply ?? "", /^Sorry, that went wrong: /);
+  assert.ok(store.slackMessages()[0].error);
+});

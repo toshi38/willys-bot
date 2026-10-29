@@ -6,6 +6,7 @@ import { householdId } from "./core/household.ts";
 import { judgePrice, recordSearchResults, snapshotCampaigns } from "./core/prices.ts";
 import { sendToMembers } from "./notify/email.ts";
 import { handleInbox } from "./plan/inbox.ts";
+import { postToWeek, toSlack } from "./plan/week.ts";
 import { handleSlack, type SlackRequest } from "./plan/slack.ts";
 import { apply, planWeek, redraftWeek, renderWeek } from "./plan/weekly.ts";
 
@@ -124,7 +125,8 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
     }
     case "slots": {
       await ctx.ensureLogin();
-      console.log(JSON.stringify(await willys.pickupSlots(household.config.willys.storeId), null, 2));
+      const { slots } = await willys.pickupSlots(household.config.willys.storeId);
+      for (const s of slots) console.log(`${s.available ? "free " : "taken"} ${s.formattedTime}  (order by ${s.closeTimeFormatted ?? "?"})  ${s.code}`);
       return;
     }
     case "get": {
@@ -191,6 +193,7 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
         subject: `food-bot: ${unit} failed`,
         markdown: `${unit} failed on ${hostname()}. Its last log lines:\n\n\`\`\`\n${log.trim()}\n\`\`\`\n\nYou get this at most once every six hours for this unit.`,
       });
+      await toSlack(() => postToWeek(ctx, `**food-bot: ${unit} failed** on ${hostname()}. ${operator} has the log by email.`, { broadcast: true }));
       store.set(key, new Date().toISOString());
       console.log(`Alerted ${operator} about ${unit}`);
       return;

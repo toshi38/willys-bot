@@ -1,11 +1,11 @@
 import { encryptCredential } from "./crypto.ts";
-import type { CampaignKind, Cart, Customer, ProductPage, Promotion, Store } from "./types.ts";
+import type { CampaignKind, Cart, Customer, PickupSlot, PickupSlots, ProductPage, Promotion, Store } from "./types.ts";
 
 // Client for the JSON API behind willys.se. It keeps a cookie jar so a
 // logged-in session can be saved and reused instead of logging in on every
 // run, and spaces requests out so a whole weekly run looks like one person
 // shopping. Login and cart calls follow ErikHellman/willys-agent (MIT); slot
-// endpoints follow jimmystridh/willys-mcp (MIT).
+// endpoints are the ones willys.se's own checkout calls.
 
 const BASE_URL = "https://www.willys.se";
 const USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36";
@@ -151,12 +151,20 @@ export class WillysClient {
     return this.cart();
   }
 
-  pickupSlots(storeId: string): Promise<unknown> {
-    return this.json(`/axfood/rest/pickup-slots/${encodeURIComponent(storeId)}`);
+  // Click-and-collect slots at a store for the coming days, as willys.se's
+  // checkout lists them.
+  pickupSlots(storeId: string): Promise<PickupSlots> {
+    return this.json(`/axfood/rest/v2/slot/pickInStore?storeId=${encodeURIComponent(storeId)}&b2b=false`);
   }
 
+  // Puts a slot on the cart, as choosing it at checkout does.
   selectPickupSlot(slotCode: string): Promise<unknown> {
-    return this.json("/axfood/rest/select-pickup-slot", { method: "POST", body: JSON.stringify({ slotCode }) });
+    return this.json(`/axfood/rest/v2/slot/slotInCart/${encodeURIComponent(slotCode)}?isTmsSlot=false`, { method: "POST", body: "{}" });
+  }
+
+  // The slot on the cart, if any.
+  slotInCart(): Promise<PickupSlot | null> {
+    return this.json<PickupSlot | null>("/axfood/rest/v2/slot/slotInCart");
   }
 
   orders(): Promise<unknown> {

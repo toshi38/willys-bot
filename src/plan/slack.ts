@@ -41,8 +41,14 @@ export async function handleSlack(ctx: Context, req: SlackRequest): Promise<Slac
   try {
     response = await respond(ctx, req);
   } catch (err) {
-    record(null, err instanceof Error ? err.message : String(err));
-    throw err;
+    // The error goes back to whoever asked, in the conversation they asked
+    // in, rather than only into the log.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Slack request failed: ${message}`);
+    response = { reply: `Sorry, that went wrong: ${message.slice(0, 300)}\nSome of it may already be done; ask me what the week looks like now.` };
+    record(response.reply ?? null, message);
+    await toSlack(() => postChanges(ctx));
+    return response;
   }
   record(response.reply ?? null, null);
   // Whatever the message changed goes in this week's thread straight away.
@@ -88,8 +94,8 @@ async function respond(ctx: Context, req: SlackRequest): Promise<SlackResponse> 
   return { reply };
 }
 
-// A failed approval has already told the household in the week's thread
-// (see apply), so it is only logged here.
+// A failed approval has already told the household in the channel (see
+// apply), so it is only logged here.
 async function decided(f: () => Promise<unknown>): Promise<void> {
   try {
     await f();

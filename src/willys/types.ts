@@ -90,3 +90,23 @@ export interface Store {
 }
 
 export type CampaignKind = "online" | "offline";
+
+export interface PickupSlot {
+  code: string;
+  // Epoch milliseconds.
+  startTime: number;
+  endTime: number;
+  // Orders for the slot must be placed before this, epoch milliseconds.
+  closeTime: number;
+  available: boolean;
+  // "Fredag 30 Okt 18:00-19:30".
+  formattedTime: string;
+  closeTimeFormatted?: string;
+  totalCost?: { value: number; formattedValue: string };
+}
+
+export interface PickupSlots {
+  slots: PickupSlot[];
+  selectedSlot: PickupSlot | null;
+  tmsSlots: boolean;
+}

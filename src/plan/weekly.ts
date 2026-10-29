@@ -212,10 +212,13 @@ export async function decide(ctx: Context, week: Week, kind: "approve" | "skip",
 
 // Fills the cart with the week's items on top of whatever is already in
 // it, books a pickup slot inside the household's window, marks the list
-// items as ordered and the restocked pantry entries as had. On failure the
-// week is marked failed, its list items go back on the list, and the
-// household is told what to check: the cart may be partly filled, so
-// nothing retries on its own.
+// items as ordered and the restocked pantry entries as had.
+//
+// Once the cart is filled the week counts as applied, even if no slot could
+// be booked: the household is told to pick one on willys.se. If filling the
+// cart fails, the week is marked failed, its list items go back on the
+// list, and the household is told to check the cart; nothing retries on
+// its own, since filling it again would double every line.
 export async function apply(ctx: Context, week: Week, opts: { dryRun?: boolean } = {}): Promise<string> {
   const { store, willys, household } = ctx;
   const items = store.items(week.id);
@@ -224,26 +227,12 @@ export async function apply(ctx: Context, week: Week, opts: { dryRun?: boolean }
   if (opts.dryRun) return `${week.id}: would add ${wanted.size} cart lines and book a slot (dry run)`;
   const ids = JSON.parse(store.get(idsKey(week.id)) ?? "[]") as string[];
 
+  let after;
   try {
     await ctx.ensureLogin();
     const cart = await willys.cart();
     const inCart = new Map(cart.products.map((p) => [p.code, p.quantity]));
-    const after = await willys.setCartQuantities([...wanted].map(([code, qty]) => ({ code, qty: (inCart.get(code) ?? 0) + qty })));
-    const slot = await bookPickupSlot(willys, household);
-    store.orderListItems(week.id);
-    for (const name of new Set(items.map((i) => i.restocks).filter((n): n is string => !!n))) store.setPantryItem({ name, status: "have", updatedBy: "food-bot" });
-    store.updateWeek(week.id, { status: "applied", appliedAt: new Date().toISOString() });
-    const note = [
-      `The cart is filled: ${after.products.length} products, total ${after.totalPrice ?? "?"}.`,
-      slot ? `Pickup slot booked: ${slot}.` : "No pickup slot inside the window was free: pick one on willys.se.",
-      "",
-      "Review and place the order at https://www.willys.se/kassa",
-      "",
-      renderRecipes(ctx, week),
-    ].join("\n");
-    const sent = await tellHousehold(ctx, { subject: `Re: ${subject(week)}`, inReplyTo: ids.at(-1), markdown: note }, `**Order ready**\n${note}`);
-    store.set(idsKey(week.id), JSON.stringify([...ids, sent]));
-    return `${week.id}: cart filled (${after.totalPrice ?? "?"}), slot ${slot ?? "not booked"}`;
+    after = await willys.setCartQuantities([...wanted].map(([code, qty]) => ({ code, qty: (inCart.get(code) ?? 0) + qty })));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     store.updateWeek(week.id, { status: "failed", error: message });
@@ -252,9 +241,36 @@ export async function apply(ctx: Context, week: Week, opts: { dryRun?: boolean }
       subject: `Re: ${subject(week)}`,
       inReplyTo: ids.at(-1),
       markdown: `Filling the cart failed, so the order is not ready: ${message.slice(0, 300)}\n\nThe cart on willys.se may be partly filled. Check it and finish the order there; I will not try again on my own. The list items are back on the list for next week.`,
-    }).catch((e: unknown) => console.error(`Could not tell the household: ${e instanceof Error ? e.message : e}`));
+    }, undefined, { broadcast: true }).catch((e: unknown) => console.error(`Could not tell the household: ${e instanceof Error ? e.message : e}`));
     throw err;
   }
+
+  store.orderListItems(week.id);
+  for (const name of new Set(items.map((i) => i.restocks).filter((n): n is string => !!n))) store.setPantryItem({ name, status: "have", updatedBy: "food-bot" });
+  let slot: string | null = null;
+  let slotError: string | null = null;
+  try {
+    slot = await bookPickupSlot(willys, household, week.id);
+  } catch (err) {
+    slotError = err instanceof Error ? err.message : String(err);
+  }
+  store.updateWeek(week.id, { status: "applied", appliedAt: new Date().toISOString(), error: slotError });
+  const window = `${household.config.pickup.earliest} to ${household.config.pickup.latest}`;
+  const note = [
+    `The cart is filled: ${after.products.length} products, total ${after.totalPrice ?? "?"}.`,
+    slot
+      ? `Pickup slot booked: ${slot}.`
+      : slotError
+        ? `Booking the pickup slot failed (${slotError.slice(0, 200)}): pick one on willys.se.`
+        : `No free pickup slot between ${window} on the pickup day: pick one on willys.se.`,
+    "",
+    "Review and place the order at https://www.willys.se/kassa",
+    "",
+    renderRecipes(ctx, week),
+  ].join("\n");
+  const sent = await tellHousehold(ctx, { subject: `Re: ${subject(week)}`, inReplyTo: ids.at(-1), markdown: note }, `**Order ready**\n${note}`, { broadcast: !slot });
+  store.set(idsKey(week.id), JSON.stringify([...ids, sent]));
+  return `${week.id}: cart filled (${after.totalPrice ?? "?"}), slot ${slot ?? `not booked${slotError ? `: ${slotError}` : ""}`}`;
 }
 
 // The week as the household sees it: dishes, then what to buy grouped by

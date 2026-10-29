@@ -70,9 +70,11 @@ export async function postToWeek(ctx: Context, text: string, opts: { buttons?: S
 // and email carry the same news. `slackText` replaces the email text in
 // Slack when the thread needs more context, such as the email being
 // answered.
-export async function tellHousehold(ctx: Context, email: OutgoingEmail, slackText?: string): Promise<string> {
+// With `broadcast`, which problems pass, the post is also shown in the
+// channel so nobody has to open the thread to see it.
+export async function tellHousehold(ctx: Context, email: OutgoingEmail, slackText?: string, opts: { broadcast?: boolean } = {}): Promise<string> {
   const messageId = await sendToMembers(ctx.household, email);
-  await toSlack(() => postToWeek(ctx, slackText ?? `**${email.subject.replace(/\s*\[wb:[0-9a-f]+\]$/, "")}**\n\n${email.markdown}`));
+  await toSlack(() => postToWeek(ctx, slackText ?? `**${email.subject.replace(/\s*\[wb:[0-9a-f]+\]$/, "")}**\n\n${email.markdown}`, { broadcast: opts.broadcast }));
   return messageId;
 }
 
