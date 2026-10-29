@@ -119,6 +119,46 @@ export async function announceChanges(ctx: Context, weekId: string, opts: { emai
   return true;
 }
 
+// Where an approved week's order stands on willys.se. Until the order is
+// placed, the cart holds the week with its pickup slot. After that the cart
+// no longer has the slot, and the order itself can only be changed on
+// willys.se ("Ändra order"), which reprices it at that day's prices.
+export interface OrderState {
+  placed: boolean;
+  // When the order must be placed for the booked slot, as willys.se says it.
+  closeTime: string | null;
+}
+
+export async function orderState(ctx: Context, week: Week): Promise<OrderState> {
+  await ctx.ensureLogin();
+  const slot = await ctx.willys.slotInCart();
+  const forWeek = !!slot && localDate(new Date(slot.startTime)) === week.id;
+  return { placed: !forWeek, closeTime: forWeek ? (slot.closeTimeFormatted ?? null) : null };
+}
+
+// Sets the cart to the approved week's items, for each product the week
+// has ever had, so additions, quantity changes and removals all reach it.
+// Products the week never had are left alone.
+export async function syncCart(ctx: Context, week: Week): Promise<string> {
+  const wanted = new Map<string, number>();
+  for (const i of ctx.store.allItems(week.id)) wanted.set(i.productCode, wanted.get(i.productCode) ?? 0);
+  for (const i of ctx.store.items(week.id)) wanted.set(i.productCode, (wanted.get(i.productCode) ?? 0) + i.qty);
+  const after = await ctx.willys.setCartQuantities([...wanted].map(([code, qty]) => ({ code, qty })));
+  ctx.store.markAnnounced(week.id, week.version);
+  return `${after.products.length} products, total ${after.totalPrice ?? "?"}`;
+}
+
+// After a member's message: shows a waiting week's changes, or brings an
+// approved week's cart in line with them while the order is not placed.
+// Returns a line to add to the reply, if any.
+export async function afterChange(ctx: Context, weekId: string, state: OrderState | null, opts: { emailIntro?: string; inReplyTo?: string } = {}): Promise<{ note: string; emailed: boolean }> {
+  const week = ctx.store.week(weekId);
+  if (!week || week.version <= week.announcedVersion) return { note: "", emailed: false };
+  if (week.status === "open") return { note: "", emailed: await announceChanges(ctx, weekId, opts).then((shown) => shown && opts.emailIntro !== undefined) };
+  if (week.status !== "applied" || !state || state.placed) return { note: "", emailed: false };
+  return { note: `Willys cart: ${await syncCart(ctx, week)}.`, emailed: false };
+}
+
 async function announce(ctx: Context, week: Week, emailIntro: string | undefined, inReplyTo?: string): Promise<void> {
   const { store, household } = ctx;
   let shown = false;

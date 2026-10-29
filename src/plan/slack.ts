@@ -2,8 +2,8 @@ import type { Context } from "../core/context.ts";
 import { memberByLogin } from "../core/household.ts";
 import { classifyReply } from "../notify/email.ts";
 import { runIntake } from "./inbox.ts";
-import { postChanges, toSlack } from "./week.ts";
-import { announceChanges, decide, planWeek, redraftWeek, weekForSlackThread } from "./weekly.ts";
+import { editable, localDate, postChanges, toSlack } from "./week.ts";
+import { afterChange, decide, orderState, planWeek, redraftWeek, weekForSlackThread } from "./weekly.ts";
 
 // food-bot's side of slack-gateway's contract: one request in, one response
 // out. The gateway has already checked the workspace; who may use food-bot
@@ -81,15 +81,17 @@ async function respond(ctx: Context, req: SlackRequest): Promise<SlackResponse> 
       return {};
     }
   }
-  // A message in a closed week's thread is about the shop now open, if any.
-  const week = inThread?.status === "open" ? inThread : (store.openWeek() ?? inThread);
-  const outcome = await runIntake(ctx, { name: member.name, via: "slack", subject: "", text: req.text, week, thread: req.thread });
+  // A message in a closed week's thread is about the current shop, if any.
+  const week = inThread && editable(inThread) ? inThread : (store.currentWeek(localDate(new Date())) ?? inThread);
+  const order = week?.status === "applied" && editable(week) ? await orderState(ctx, week) : null;
+  const outcome = await runIntake(ctx, { name: member.name, via: "slack", subject: "", text: req.text, week, order, thread: req.thread });
   let reply = outcome.reply;
   if (outcome.redraft) {
     const result = week?.status === "open" ? await redraftWeek(ctx, week, outcome.redraft, member.email) : await planWeek(ctx, { instructions: outcome.redraft });
     if (!result.done) reply = `${reply}\n\n(I could not start new dishes: ${result.message}.)`.trim();
   } else if (week) {
-    await announceChanges(ctx, week.id);
+    const { note } = await afterChange(ctx, week.id, order);
+    if (note) reply = `${reply}\n\n${note}`.trim();
   }
   return { reply };
 }

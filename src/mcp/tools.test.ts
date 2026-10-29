@@ -59,3 +59,15 @@ test("pinned to a closed week, the tools change nothing, even with another week 
   assert.match(res.text, /2026-10-23 is applied/);
   assert.equal(store.items("2026-10-30").length, 0);
 });
+
+test("an approved week can still be changed until its pickup day has passed", async () => {
+  const store = new Store(":memory:");
+  weekWithDish(store, "2999-01-01");
+  store.switchWeek("2999-01-01", "open", "applied");
+  const call = await connect(store);
+  assert.equal((await call("week_add_item", { productCode: "SKYR_ST", qty: 1, reason: "x" })).error, false);
+  weekWithDish(store, "2000-01-07");
+  store.switchWeek("2000-01-07", "open", "applied");
+  const past = await connect(store, "2000-01-07");
+  assert.match((await past("week_add_item", { productCode: "SKYR_ST", qty: 1, reason: "x" })).text, /is applied, so it cannot be changed/);
+});

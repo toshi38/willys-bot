@@ -15,8 +15,8 @@ import {
   senderAuthenticated,
   type ReceivedEmail,
 } from "../notify/email.ts";
-import { postChanges, tellHousehold, toSlack } from "./week.ts";
-import { announceChanges, decide, expireWeeks, planWeek, redraftWeek, renderWeek } from "./weekly.ts";
+import { editable, localDate, postChanges, tellHousehold, toSlack } from "./week.ts";
+import { afterChange, announceChanges, decide, expireWeeks, orderState, planWeek, redraftWeek, renderWeek, type OrderState } from "./weekly.ts";
 
 // Email to the bot's address, read from Resend on a timer. Only mail from a
 // household member whose domain the receiving server verified is acted on;
@@ -122,9 +122,10 @@ async function handleEmail(ctx: Context, email: ReceivedEmail, name: string, fro
     }
   }
 
-  // A reply about a closed week is about the shop now open, if any.
-  const week = answered?.status === "open" ? answered : (store.openWeek() ?? answered);
-  const outcome = await runIntake(ctx, { name, via: "email", subject: email.subject ?? "", text, week, thread: [] });
+  // A reply about a closed week is about the current shop, if any.
+  const week = answered && editable(answered) ? answered : (store.currentWeek(localDate(new Date())) ?? answered);
+  const order = week?.status === "applied" && editable(week) ? await orderState(ctx, week) : null;
+  const outcome = await runIntake(ctx, { name, via: "email", subject: email.subject ?? "", text, week, order, thread: [] });
   log.push(`${email.id} from ${name}: ${outcome.summary}`);
   let reply = outcome.reply;
   if (outcome.redraft) {
@@ -135,7 +136,13 @@ async function handleEmail(ctx: Context, email: ReceivedEmail, name: string, fro
     });
   }
   let shown = false;
-  if (week && !outcome.redraft) await settle("announcing", async () => (shown = await announceChanges(ctx, week.id, { emailIntro: reply, inReplyTo: email.message_id })));
+  if (week && !outcome.redraft) {
+    await settle("updating", async () => {
+      const done = await afterChange(ctx, week.id, order, { emailIntro: reply, inReplyTo: email.message_id });
+      shown = done.emailed;
+      if (done.note) reply = `${reply}\n\n${done.note}`.trim();
+    });
+  }
   if (!shown && reply) {
     await settle("replying", () =>
       tellHousehold(ctx, { subject: reSubject(email.subject), markdown: reply, inReplyTo: email.message_id }, `**${name} emailed:** ${quote(text)}\n\n${reply}`),
@@ -183,8 +190,10 @@ export interface IntakeInput {
   // The email subject; empty for Slack.
   subject: string;
   text: string;
-  // The week the message is about: the one it answers, or the open week.
+  // The week the message is about: the one it answers, or the current week.
   week: Week | null;
+  // For an approved week, where its order stands on willys.se.
+  order?: OrderState | null;
   // Earlier messages in the Slack thread, oldest first.
   thread: { from: string; text: string }[];
 }
@@ -199,12 +208,20 @@ export async function runIntake(ctx: Context, input: IntakeInput): Promise<z.inf
   lines.push(`Today is ${new Date().toISOString().slice(0, 10)}.`);
   const week = input.week;
   if (week) {
-    lines.push("", `## This week's shop (pickup ${week.id}, ${week.status}${week.status === "open" ? ": open for changes" : ": no longer open for changes"})`, renderWeek(ctx, week));
+    const state =
+      week.status === "open"
+        ? "waiting for a decision, open for changes"
+        : !editable(week)
+          ? `${week.status}, no longer open for changes`
+          : input.order && !input.order.placed
+            ? `approved: the Willys cart is filled but the order is not placed yet${input.order.closeTime ? ` (it must be placed before ${input.order.closeTime})` : ""}. Changes you make to the week are copied to the cart automatically`
+            : "approved and the order is already placed on willys.se. Changes you make are recorded in the week but do not reach the order: tell them to change the order on willys.se (Ändra order) at least 24 hours before pickup, and that a changed order is charged at that day's prices, so sale prices can make it cost more or less";
+    lines.push("", `## This week's shop (pickup ${week.id}: ${state})`, renderWeek(ctx, week));
   } else {
-    lines.push("", "## This week's shop", "No week is drafted yet.");
+    lines.push("", "## This week's shop", "No week is planned for the next pickup yet.");
   }
   if (input.thread.length) lines.push("", "## Earlier in the thread", ...input.thread.map((m) => `${m.from}: ${m.text}`));
-  lines.push("", "## Message", input.text || "(empty)");
+  lines.push("", "## Message", input.text || "(empty)", "", "Reply in the language the message above is written in, even when the thread, the preferences or the product names are in another language.");
   const output = await runClaude(ctx, {
     systemPrompt: SYSTEM_PROMPT,
     prompt: lines.join("\n"),

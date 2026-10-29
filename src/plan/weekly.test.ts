@@ -8,7 +8,7 @@ import type { Household } from "../core/household.ts";
 import { Store } from "../core/store.ts";
 import type { Product } from "../willys/types.ts";
 import { checkDraft, writeDraft, type Draft } from "./planner.ts";
-import { decide, renderWeek } from "./weekly.ts";
+import { decide, renderWeek, syncCart } from "./weekly.ts";
 
 const household = {
   id: "test",
@@ -226,4 +226,27 @@ test("an announcement is never marked shown for an older version", () => {
   store.markAnnounced(WEEK, 3);
   store.markAnnounced(WEEK, 2);
   assert.equal(store.week(WEEK)?.announcedVersion, 3);
+});
+
+test("an approved week's cart is set to its items, with removed products taken out", async () => {
+  const { store, ctx } = openWeekWithDraft();
+  const set: { code: string; qty: number }[][] = [];
+  const willys = { setCartQuantities: async (lines: { code: string; qty: number }[]) => (set.push(lines), { products: [], totalPrice: "100 kr" }) };
+  const c = { ...ctx, willys } as unknown as Context;
+  store.updateWeek(WEEK, { status: "applied" });
+  const beans = store.items(WEEK).find((i) => i.productCode === "BEANS_ST")!;
+  store.removeItem(beans.id, "Stephen");
+  store.addItem(WEEK, { productCode: "BEEF_ST", qty: 1, source: "request", requestedBy: "Stephen" }, "Stephen");
+  await syncCart(c, store.week(WEEK)!);
+  const lines = Object.fromEntries(set[0].map((l) => [l.code, l.qty]));
+  assert.deepEqual(lines, { SKYR_ST: 1, CHICKEN_ST: 2, BEEF_ST: 3, BEANS_ST: 0, RICE_ST: 1 });
+  assert.equal(store.week(WEEK)?.announcedVersion, store.week(WEEK)?.version);
+});
+
+test("the current week is the nearest one not yet picked up, approved weeks included", () => {
+  const { store } = openWeekWithDraft();
+  store.updateWeek(WEEK, { status: "applied" });
+  assert.equal(store.currentWeek("2026-10-29")?.id, WEEK);
+  assert.equal(store.currentWeek("2026-10-30")?.id, WEEK);
+  assert.equal(store.currentWeek("2026-10-31"), null);
 });

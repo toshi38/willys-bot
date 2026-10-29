@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Context } from "../core/context.ts";
 import { judgePrice, recordSearchResults } from "../core/prices.ts";
 import { savePreferences } from "../core/household.ts";
+import { editable, localDate } from "../plan/week.ts";
 import type { PantryStatus } from "../core/store.ts";
 
 // The household's MCP tools: the shared shopping list, the pantry, product
@@ -111,14 +112,14 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
     async ({ name }) => text(store.removePantryItem(name, member) ? `Removed ${name}` : `No pantry entry ${name}`),
   );
 
-  // This week's shop: the open week's dishes and items, edited one at a
-  // time so nothing else changes.
-  // With `week` set (the week a message is about), the tools only touch
-  // that week; otherwise the open one.
+  // This week's shop: its dishes and items, edited one at a time so nothing
+  // else changes. A week can change while it waits for a decision and,
+  // once approved, until pickup. With `week` set (the week a message is
+  // about), the tools only touch that week; otherwise the current one.
   const openWeek = () => {
-    const w = week ? store.week(week) : store.openWeek();
-    if (!w) throw new Error("No week is open for changes: it has been approved or skipped, or not drafted yet.");
-    if (w.status !== "open") throw new Error(`The week for pickup ${w.id} is ${w.status}, so it cannot be changed.`);
+    const w = week ? store.week(week) : store.currentWeek(localDate(new Date()));
+    if (!w) throw new Error("No week is planned for the next pickup yet.");
+    if (!editable(w)) throw new Error(`The week for pickup ${w.id} is ${w.status}, so it cannot be changed.`);
     return w;
   };
   const weekView = () => {

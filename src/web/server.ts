@@ -4,7 +4,8 @@ import { openContext } from "../core/context.ts";
 import { householdId, memberByLogin } from "../core/household.ts";
 import type { PantryStatus, Week } from "../core/store.ts";
 import { runIntake } from "../plan/inbox.ts";
-import { announceChanges, decide, planWeek, redraftWeek } from "../plan/weekly.ts";
+import { editable } from "../plan/week.ts";
+import { afterChange, decide, orderState, planWeek, redraftWeek } from "../plan/weekly.ts";
 import { homePage, listPage, offersPage, page, pantryPage, productPage, weekDetail, weeksTable, type WeekView } from "./views.ts";
 
 // The household's web UI: plans and past menus, the shopping list, the
@@ -126,12 +127,14 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
         const text = form.get("feedback")?.trim() ?? "";
         if (!text) return redirect(res, `/plans/${week.id}`);
         runJob("making the change", week.id, async () => {
-          const outcome = await runIntake(ctx, { name: member, via: "web", subject: "", text, week, thread: [] });
+          const order = week.status === "applied" && editable(week) ? await orderState(ctx, week) : null;
+          const outcome = await runIntake(ctx, { name: member, via: "web", subject: "", text, week, order, thread: [] });
           if (outcome.redraft) {
             const result = await redraftWeek(ctx, week, outcome.redraft, by);
             if (!result.done) return `${outcome.reply} (I could not start new dishes: ${result.message}.)`;
           } else {
-            await announceChanges(ctx, week.id);
+            const { note } = await afterChange(ctx, week.id, order);
+            if (note) return `${outcome.reply} ${note}`;
           }
           return outcome.reply || outcome.summary;
         });

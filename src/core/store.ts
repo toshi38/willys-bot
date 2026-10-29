@@ -584,6 +584,14 @@ export class Store {
     return r ? toWeek(r) : null;
   }
 
+  // The week changes are about: the nearest one whose pickup has not passed
+  // that is waiting for a decision or approved (its cart can still change
+  // until pickup).
+  currentWeek(today: string): Week | null {
+    const r = this.#db.prepare(`SELECT * FROM weeks WHERE status IN ('open', 'applied') AND id >= ? ORDER BY id LIMIT 1`).get(today);
+    return r ? toWeek(r) : null;
+  }
+
   weeks(limit = 20): Week[] {
     return this.#db.prepare(`SELECT * FROM weeks ORDER BY id DESC LIMIT ?`).all(limit).map(toWeek);
   }
@@ -672,6 +680,11 @@ export class Store {
   }
 
   // Items
+
+  // Every item the week ever had, removed ones too.
+  allItems(weekId: string): WeekItem[] {
+    return this.#db.prepare(`SELECT * FROM week_items WHERE week_id = ? ORDER BY id`).all(weekId).map((r) => this.#toItem(r));
+  }
 
   items(weekId: string): WeekItem[] {
     return this.#db.prepare(`SELECT * FROM week_items WHERE week_id = ? AND removed_at IS NULL ORDER BY id`).all(weekId).map((r) => this.#toItem(r));

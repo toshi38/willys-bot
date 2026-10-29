@@ -1,5 +1,6 @@
 import type { Context } from "../core/context.ts";
 import type { Household } from "../core/household.ts";
+import type { Week } from "../core/store.ts";
 import { sendToMembers, type OutgoingEmail } from "../notify/email.ts";
 import { postToSlack, type SlackButton, type SlackRef } from "../notify/slack.ts";
 
@@ -105,6 +106,12 @@ export async function toSlack(f: () => Promise<unknown>): Promise<void> {
   } catch (err) {
     console.error(`Slack: ${err instanceof Error ? err.message : err}`);
   }
+}
+
+// Whether a week still takes changes: while it waits for a decision, and
+// after approval until its pickup day has passed.
+export function editable(week: Week, today = localDate(new Date())): boolean {
+  return week.status === "open" || (week.status === "applied" && week.id >= today);
 }
 
 export function localDate(d: Date): string {
