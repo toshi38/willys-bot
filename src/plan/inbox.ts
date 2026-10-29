@@ -221,7 +221,7 @@ export async function runIntake(ctx: Context, input: IntakeInput): Promise<z.inf
     lines.push("", "## This week's shop", "No week is planned for the next pickup yet.");
   }
   if (input.thread.length) lines.push("", "## Earlier in the thread", ...input.thread.map((m) => `${m.from}: ${m.text}`));
-  lines.push("", "## Message", input.text || "(empty)", "", "Reply in the language the message above is written in, even when the thread, the preferences or the product names are in another language.");
+  lines.push("", "## Message", input.text || "(empty)", "", `Write your reply in ${messageLanguage(input.text)}, the language of the message above, even though the thread, the preferences or the product names may be in another language.`);
   const output = await runClaude(ctx, {
     systemPrompt: SYSTEM_PROMPT,
     prompt: lines.join("\n"),
@@ -239,6 +239,17 @@ export async function runIntake(ctx: Context, input: IntakeInput): Promise<z.inf
   });
   ctx.household.preferences = loadHousehold(ctx.household.id).preferences;
   return IntakeOutput.parse(output);
+}
+
+// The language a member wrote in: Swedish when the message has Swedish
+// letters or common Swedish words, otherwise English. Decided here rather
+// than left to Claude, which drifts towards the thread's or the
+// preferences' language.
+export function messageLanguage(text: string): "Swedish" | "English" {
+  const t = ` ${text.toLowerCase()} `;
+  if (/[åäö]/.test(t)) return "Swedish";
+  const swedish = [" och ", " jag ", " vi ", " inte ", " det ", " att ", " är ", " kan ", " ska ", " har ", " vill ", " till ", " med ", " för ", " på ", " tack ", " hej ", " nej ", " ja "];
+  return swedish.filter((w) => t.includes(w)).length >= 2 ? "Swedish" : "English";
 }
 
 // The start of an email, quoted for the weekly thread.

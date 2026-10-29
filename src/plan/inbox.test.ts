@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { Context } from "../core/context.ts";
 import type { Household } from "../core/household.ts";
 import { Store } from "../core/store.ts";
-import { handleInbox } from "./inbox.ts";
+import { handleInbox, messageLanguage } from "./inbox.ts";
 
 const household = {
   id: "test",
@@ -63,4 +63,11 @@ test("mail from strangers, unverified senders or to other addresses is ignored w
   assert.equal(store.mailRecord("spoofed")?.status, "ignored");
   assert.equal(store.mailRecord("other-bot"), null);
   assert.deepEqual(sent, []);
+});
+
+test("a reply follows the language the member wrote in, not the thread's", () => {
+  assert.equal(messageLanguage("also carin wants a weeks worth of skyr"), "English");
+  assert.equal(messageLanguage("remove the bananas and the dishwasher stuff"), "English");
+  assert.equal(messageLanguage("Ta bort glutenfritt bröd det behöver vi inte"), "Swedish");
+  assert.equal(messageLanguage("vi kan ta det till fredag"), "Swedish");
 });
