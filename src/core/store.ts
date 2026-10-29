@@ -614,8 +614,16 @@ export class Store {
     this.#db.prepare(`UPDATE list_items SET status = 'open', plan_id = NULL WHERE status = 'planned' AND plan_id = ?`).run(weekId);
   }
 
+  // Marks ordered every list item the week took on, whether it is still
+  // planned for the week or was sent back to the list in the meantime.
   orderListItems(weekId: string): void {
-    this.#db.prepare(`UPDATE list_items SET status = 'ordered' WHERE status = 'planned' AND plan_id = ?`).run(weekId);
+    this.#db
+      .prepare(
+        `UPDATE list_items SET status = 'ordered', plan_id = ?
+         WHERE (status = 'planned' AND plan_id = ?)
+            OR (status = 'open' AND id IN (SELECT list_item_id FROM week_items WHERE week_id = ? AND removed_at IS NULL AND list_item_id IS NOT NULL))`,
+      )
+      .run(weekId, weekId, weekId);
   }
 
   updateWeek(id: string, patch: Partial<Pick<Week, "status" | "summary" | "notes" | "announcedVersion" | "sentAt" | "decidedBy" | "decidedAt" | "appliedAt" | "error">>): Week {

@@ -247,30 +247,41 @@ export async function apply(ctx: Context, week: Week, opts: { dryRun?: boolean }
 
   store.orderListItems(week.id);
   for (const name of new Set(items.map((i) => i.restocks).filter((n): n is string => !!n))) store.setPantryItem({ name, status: "have", updatedBy: "food-bot" });
-  let slot: string | null = null;
+  store.updateWeek(week.id, { status: "applied", appliedAt: new Date().toISOString(), error: null });
+  const booked = await bookSlot(ctx, store.week(week.id)!, `The cart is filled: ${after.products.length} products, total ${after.totalPrice ?? "?"}.`);
+  return `${week.id}: cart filled (${after.totalPrice ?? "?"}), ${booked}`;
+}
+
+// Books the pickup slot for a week whose cart is filled and confirms it in
+// Slack's channel and by email, with the recipes following in the thread.
+// Also used on its own when booking failed the first time.
+export async function bookSlot(ctx: Context, week: Week, cartNote: string): Promise<string> {
+  const { store, willys, household } = ctx;
+  let slot = null;
   let slotError: string | null = null;
   try {
     slot = await bookPickupSlot(willys, household, week.id);
   } catch (err) {
     slotError = err instanceof Error ? err.message : String(err);
   }
-  store.updateWeek(week.id, { status: "applied", appliedAt: new Date().toISOString(), error: slotError });
-  const window = `${household.config.pickup.earliest} to ${household.config.pickup.latest}`;
-  const note = [
-    `The cart is filled: ${after.products.length} products, total ${after.totalPrice ?? "?"}.`,
-    slot
-      ? `Pickup slot booked: ${slot}.`
-      : slotError
-        ? `Booking the pickup slot failed (${slotError.slice(0, 200)}): pick one on willys.se.`
-        : `No free pickup slot between ${window} on the pickup day: pick one on willys.se.`,
-    "",
-    "Review and place the order at https://www.willys.se/kassa",
-    "",
-    renderRecipes(ctx, week),
-  ].join("\n");
-  const sent = await tellHousehold(ctx, { subject: `Re: ${subject(week)}`, inReplyTo: ids.at(-1), markdown: note }, `**Order ready**\n${note}`, { broadcast: !slot });
+  store.updateWeek(week.id, { error: slotError });
+  const window = `${household.config.pickup.earliest} and ${household.config.pickup.latest}`;
+  const pickup = slot
+    ? `Pickup booked: **${slot.formattedTime}**. Place the order at https://www.willys.se/kassa before ${slot.closeTimeFormatted ?? "the order cutoff"}, or the slot is lost.`
+    : slotError
+      ? `Booking the pickup slot failed (${slotError.slice(0, 200)}). Pick one when you place the order at https://www.willys.se/kassa.`
+      : `No free pickup slot starting between ${window} on ${week.id}. Pick one when you place the order at https://www.willys.se/kassa.`;
+  const ids = JSON.parse(store.get(idsKey(week.id)) ?? "[]") as string[];
+  const recipes = renderRecipes(ctx, week);
+  const sent = await tellHousehold(
+    ctx,
+    { subject: `Re: ${subject(week)}`, inReplyTo: ids.at(-1), markdown: [cartNote, pickup, recipes].filter(Boolean).join("\n\n") },
+    `**${slot ? "Pickup booked" : "Order ready, no pickup slot booked"}**\n${cartNote}\n${pickup}`,
+    { broadcast: true },
+  );
   store.set(idsKey(week.id), JSON.stringify([...ids, sent]));
-  return `${week.id}: cart filled (${after.totalPrice ?? "?"}), slot ${slot ?? `not booked${slotError ? `: ${slotError}` : ""}`}`;
+  if (recipes) await toSlack(() => postToWeek(ctx, recipes));
+  return slot ? `slot ${slot.formattedTime}` : `slot not booked${slotError ? `: ${slotError}` : ""}`;
 }
 
 // The week as the household sees it: dishes, then what to buy grouped by

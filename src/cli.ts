@@ -8,7 +8,7 @@ import { sendToMembers } from "./notify/email.ts";
 import { handleInbox } from "./plan/inbox.ts";
 import { postToWeek, toSlack } from "./plan/week.ts";
 import { handleSlack, type SlackRequest } from "./plan/slack.ts";
-import { apply, planWeek, redraftWeek, renderWeek } from "./plan/weekly.ts";
+import { apply, bookSlot, planWeek, redraftWeek, renderWeek } from "./plan/weekly.ts";
 
 const USAGE = `Usage: npm run wb -- <command> [--household <id>]
 
@@ -31,6 +31,8 @@ const USAGE = `Usage: npm run wb -- <command> [--household <id>]
   inbox [--dry-run]       act on new email to the bot (--dry-run lists it without acting)
   slack                   handle one slack-gateway request (JSON on stdin, response JSON on stdout)
   apply <pickup-date>     fill the cart and book a slot for a week without waiting for a reply
+  book-slot <pickup-date> book the pickup slot for a week whose cart is already filled, and confirm it
+                          (for a failed week, only after checking on willys.se that the cart is complete)
   weeks                   list recent weeks and their status
   alert <unit>            email the operator that a systemd unit failed, with its last log lines
                           (at most once every six hours per unit; run by OnFailure=)`;
@@ -196,6 +198,19 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
       await toSlack(() => postToWeek(ctx, `**food-bot: ${unit} failed** on ${hostname()}. ${operator} has the log by email.`, { broadcast: true }));
       store.set(key, new Date().toISOString());
       console.log(`Alerted ${operator} about ${unit}`);
+      return;
+    }
+    case "book-slot": {
+      const week = store.week(rest[0] ?? "");
+      if (!week) throw new Error(`No week ${rest[0]}`);
+      if (week.status !== "applied" && week.status !== "failed") throw new Error(`Week ${week.id} is ${week.status}: approve it first, which fills the cart`);
+      await ctx.ensureLogin();
+      const cart = await willys.cart();
+      if (week.status === "failed") {
+        store.updateWeek(week.id, { status: "applied", appliedAt: new Date().toISOString() });
+        store.orderListItems(week.id);
+      }
+      console.log(await bookSlot(ctx, store.week(week.id)!, `The cart is filled: ${cart.products.length} products, total ${cart.totalPrice ?? "?"}.`));
       return;
     }
     case "weeks": {

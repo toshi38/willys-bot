@@ -28,11 +28,17 @@ test("the earliest free slot inside the window on the pickup day is picked", () 
   assert.equal(pickSlot(slots, household, "2026-10-30", now)?.code, "fri-1800");
 });
 
-test("taken slots, slots past their order cutoff and slots running past the window are skipped", () => {
+test("taken slots, slots past their order cutoff and slots starting outside the window are skipped", () => {
   const slots = [
     slot("taken", "2026-10-30T17:00:00Z", "2026-10-30T18:30:00Z", { available: false }),
     slot("closed", "2026-10-30T17:00:00Z", "2026-10-30T18:30:00Z", { closeTime: Date.parse("2026-10-29T05:00:00Z") }),
-    slot("late", "2026-10-30T18:30:00Z", "2026-10-30T20:00:00Z"),
+    slot("too-late", "2026-10-30T19:00:00Z", "2026-10-30T20:30:00Z"),
+    slot("too-early", "2026-10-30T15:30:00Z", "2026-10-30T17:00:00Z"),
   ];
   assert.equal(pickSlot(slots, household, "2026-10-30", now), null);
+});
+
+test("a slot wider than the window counts when it starts inside it", () => {
+  const evening = slot("fri-1800-2100", "2026-10-30T17:00:00Z", "2026-10-30T20:00:00Z");
+  assert.equal(pickSlot([evening], household, "2026-10-30", now)?.code, "fri-1800-2100");
 });
