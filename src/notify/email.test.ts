@@ -215,3 +215,17 @@ test("an HTTP error on a read is not retried", async () => {
   await assert.rejects(getReceived(members, "abc", fetchImpl), /failed \(500\)/);
   assert.equal(calls.length, 1);
 });
+
+test("HTML in an email's text is shown as text, not rendered", async () => {
+  const sent: { html: string }[] = [];
+  const fetchImpl = (async (_url: string, init?: RequestInit) => {
+    sent.push(JSON.parse(String(init?.body)));
+    return Response.json({ id: "1" });
+  }) as typeof fetch;
+  process.env.CREDENTIALS_DIRECTORY = new URL("./testdata/", import.meta.url).pathname;
+  const household = { config: { members: [{ name: "Carin", email: "carin@test.example" }], mail: { address: "food@test.example", name: "food-bot", secret: "test" } } } as unknown as Household;
+  await sendToMembers(household, { subject: "s", markdown: "Carin wrote: <script>alert(1)</script> and **bold**" }, fetchImpl);
+  delete process.env.CREDENTIALS_DIRECTORY;
+  assert.doesNotMatch(sent[0].html, /<script>/);
+  assert.ok(sent[0].html.includes("&lt;script&gt;alert(1)&lt;/script&gt; and <strong>bold</strong>"));
+});

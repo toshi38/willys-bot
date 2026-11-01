@@ -396,9 +396,9 @@ export class Store {
   }
 
   removePantryItem(name: string, by?: string): boolean {
-    const removed = this.#db.prepare(`DELETE FROM pantry WHERE name_key = ?`).run(name.trim().toLowerCase()).changes > 0;
-    if (removed && by) this.logChange(by, `stopped tracking ${name.trim()} in the pantry`);
-    return removed;
+    const removed = this.#db.prepare(`DELETE FROM pantry WHERE name_key = ? RETURNING name`).get(name.trim().toLowerCase());
+    if (removed && by) this.logChange(by, `stopped tracking ${String(removed.name)} in the pantry`);
+    return !!removed;
   }
 
   // Change log: who changed what in the list, pantry and preferences, for

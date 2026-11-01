@@ -40,7 +40,9 @@ export async function sendToMembers(household: Household, email: OutgoingEmail, 
       subject: email.subject,
       headers,
       text: email.markdown,
-      html: `<!doctype html><html><body style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.45; max-width: 760px">${marked.parse(email.markdown, { async: false })}</body></html>`,
+      // Markdown only: any HTML in the text (a member's words quoted, Claude's
+      // reply) is shown as text, never rendered.
+      html: `<!doctype html><html><body style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.45; max-width: 760px">${marked.parse(email.markdown.replace(/</g, "&lt;"), { async: false })}</body></html>`,
     }),
   });
   return messageId;

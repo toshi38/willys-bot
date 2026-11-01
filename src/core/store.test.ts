@@ -108,7 +108,7 @@ test("pantry changes are logged when the status changes, and removals when somet
   assert.deepEqual(changeLog(store), [
     "Carin marked rice as in stock in the pantry",
     "Stephen marked rice as out in the pantry",
-    "Carin stopped tracking RICE in the pantry",
+    "Carin stopped tracking rice in the pantry",
     "Carin marked salt as in stock in the pantry",
   ]);
 });
