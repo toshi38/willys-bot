@@ -1,11 +1,12 @@
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { recipeProblems } from "./check.ts";
 import { leakProblems } from "./leaks.ts";
 import { buildSite, SiteConfig, SiteWeek } from "./site.ts";
 
-// Builds the recipe site from exported recipe data:
+// Builds the recipe site from exported recipe data (Netlify runs it, see
+// netlify.toml):
 //   <data>/site.json         { "title": "...", "language": "en" }
 //   <data>/weeks/<date>.json one SiteWeek per pickup
 // into <out>, replacing what is there. It stops on data that does not
@@ -21,15 +22,13 @@ const data = values.data;
 const read = (path: string) => readFileSync(path, "utf8");
 const problems: string[] = [];
 
-let config: SiteConfig;
-try {
-  config = SiteConfig.parse(JSON.parse(read(join(data, "site.json"))));
-} catch {
-  config = SiteConfig.parse({});
-}
+const configPath = join(data, "site.json");
+const configText = existsSync(configPath) ? read(configPath) : "{}";
+problems.push(...leakProblems("site.json", configText));
+const config = SiteConfig.parse(JSON.parse(configText));
 const weeksDir = join(data, "weeks");
 const weeks: SiteWeek[] = [];
-for (const file of readdirSync(weeksDir).filter((f) => f.endsWith(".json")).sort()) {
+for (const file of existsSync(weeksDir) ? readdirSync(weeksDir).filter((f) => f.endsWith(".json")).sort() : []) {
   const text = read(join(weeksDir, file));
   problems.push(...leakProblems(`weeks/${file}`, text));
   const parsed = SiteWeek.safeParse(JSON.parse(text));
