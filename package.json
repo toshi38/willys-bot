@@ -8,6 +8,7 @@
   "scripts": {
     "prepare": "git config core.hooksPath .githooks || true",
     "test": "node --no-warnings=ExperimentalWarning --test \"src/**/*.test.ts\" \"test/**/*.test.ts\"",
+    "test:site": "node --no-warnings=ExperimentalWarning --test \"src/recipes/*.test.ts\"",
     "typecheck": "tsc",
     "wb": "node --no-warnings=ExperimentalWarning src/cli.ts",
     "mcp": "node --no-warnings=ExperimentalWarning src/mcp/server.ts",
