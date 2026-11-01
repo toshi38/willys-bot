@@ -1,0 +1,293 @@
+{
+ "pickup": "2026-10-30",
+ "dishes": [
+  {
+   "name": "Slow-cooked beef chili with mushrooms and kidney beans",
+   "portions": 6,
+   "fromText": true,
+   "recipe": {
+    "name": "Slow-cooked beef chili with mushrooms and kidney beans",
+    "servings": 6,
+    "summary": "",
+    "equipment": [],
+    "ingredients": [
+     {
+      "id": "i1",
+      "name": "1 kg beef chuck, in 3 cm cubes"
+     },
+     {
+      "id": "i2",
+      "name": "2 punnets mushrooms (500 g), quartered"
+     },
+     {
+      "id": "i3",
+      "name": "3 yellow onions, chopped"
+     },
+     {
+      "id": "i4",
+      "name": "4 cloves garlic"
+     },
+     {
+      "id": "i5",
+      "name": "2 tins crushed tomatoes (pantry)"
+     },
+     {
+      "id": "i6",
+      "name": "2 tins kidney beans, drained (pantry)"
+     },
+     {
+      "id": "i7",
+      "name": "2 tsp chili flakes"
+     },
+     {
+      "id": "i8",
+      "name": "2 tsp ground cumin, 2 tsp smoked paprika (gluten free)"
+     },
+     {
+      "id": "i9",
+      "name": "Salt, pepper, oil"
+     },
+     {
+      "id": "i10",
+      "name": "Rice to serve (pantry)"
+     }
+    ],
+    "steps": [
+     {
+      "id": "s1",
+      "kind": "cook",
+      "text": "Brown the beef in batches in a heavy pot with a little oil, season with salt and pepper.",
+      "uses": [],
+      "minutes": 0
+     },
+     {
+      "id": "s2",
+      "kind": "cook",
+      "text": "Soften the onions, then the mushrooms and garlic, 8 minutes.",
+      "uses": [],
+      "minutes": 0,
+      "timer": {
+       "minutes": 8,
+       "label": "Step 2"
+      }
+     },
+     {
+      "id": "s3",
+      "kind": "cook",
+      "text": "Add the spices and chili flakes for a minute, then the tomatoes, the beef and 2 dl water.",
+      "uses": [],
+      "minutes": 0
+     },
+     {
+      "id": "s4",
+      "kind": "simmer",
+      "text": "Cover and simmer on low for 2 to 2.5 hours until the beef is tender, stirring now and then.",
+      "uses": [],
+      "minutes": 0,
+      "timer": {
+       "minutes": 120,
+       "upTo": 150,
+       "label": "Step 4"
+      }
+     },
+     {
+      "id": "s5",
+      "kind": "serve",
+      "text": "Add the beans for the last 20 minutes. Season and serve with rice.",
+      "uses": [],
+      "minutes": 0,
+      "timer": {
+       "minutes": 20,
+       "label": "Step 5"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "Chicken, tofu and zucchini stir fry with mushrooms, ginger and garlic",
+   "portions": 6,
+   "fromText": true,
+   "recipe": {
+    "name": "Chicken, tofu and zucchini stir fry with mushrooms, ginger and garlic",
+    "servings": 6,
+    "summary": "",
+    "equipment": [],
+    "ingredients": [
+     {
+      "id": "i1",
+      "name": "2 packs firm tofu (400 g), in cubes, patted dry"
+     },
+     {
+      "id": "i2",
+      "name": "900 g skinless chicken breast fillet, in strips"
+     },
+     {
+      "id": "i3",
+      "name": "3 zucchini, in half moons"
+     },
+     {
+      "id": "i4",
+      "name": "1 punnet mushrooms (250 g), sliced"
+     },
+     {
+      "id": "i5",
+      "name": "1 onion, sliced"
+     },
+     {
+      "id": "i6",
+      "name": "3 cloves garlic, a thumb of ginger, grated"
+     },
+     {
+      "id": "i7",
+      "name": "4 tbsp Mrs Chang or Pearl River Bridge mushroom soy (gluten free, at home)"
+     },
+     {
+      "id": "i8",
+      "name": "1 tbsp cornflour (majsstärkelse), 1 tsp sugar, chili flakes"
+     },
+     {
+      "id": "i9",
+      "name": "Oil"
+     },
+     {
+      "id": "i10",
+      "name": "Rice to serve (pantry)"
+     }
+    ],
+    "steps": [
+     {
+      "id": "s1",
+      "kind": "cook",
+      "text": "Fry the tofu in oil until golden on all sides, set aside.",
+      "uses": [],
+      "minutes": 0
+     },
+     {
+      "id": "s2",
+      "kind": "cook",
+      "text": "Fry the chicken strips over high heat until cooked through, set aside.",
+      "uses": [],
+      "minutes": 0
+     },
+     {
+      "id": "s3",
+      "kind": "cook",
+      "text": "Fry the zucchini until browned, then the onion and mushrooms.",
+      "uses": [],
+      "minutes": 0
+     },
+     {
+      "id": "s4",
+      "kind": "cook",
+      "text": "Add garlic and ginger for a minute.",
+      "uses": [],
+      "minutes": 0
+     },
+     {
+      "id": "s5",
+      "kind": "cook",
+      "text": "Mix the soy, sugar, chili and cornflour with 1 dl water, pour in and let it thicken.",
+      "uses": [],
+      "minutes": 0
+     },
+     {
+      "id": "s6",
+      "kind": "serve",
+      "text": "Return the tofu and chicken, toss and serve with rice.",
+      "uses": [],
+      "minutes": 0
+     }
+    ]
+   }
+  },
+  {
+   "name": "Coconut chicken and butternut curry with rice",
+   "portions": 6,
+   "fromText": true,
+   "recipe": {
+    "name": "Coconut chicken and butternut curry with rice",
+    "servings": 6,
+    "summary": "",
+    "equipment": [],
+    "ingredients": [
+     {
+      "id": "i1",
+      "name": "1400 g kycklinglårfilé (2 x 700 g)"
+     },
+     {
+      "id": "i2",
+      "name": "1 kg butternutpumpa"
+     },
+     {
+      "id": "i3",
+      "name": "2 yellow onions"
+     },
+     {
+      "id": "i4",
+      "name": "4 garlic cloves"
+     },
+     {
+      "id": "i5",
+      "name": "30 g fresh ginger"
+     },
+     {
+      "id": "i6",
+      "name": "2 limes (juice and zest)"
+     },
+     {
+      "id": "i7",
+      "name": "2 cans coconut milk (pantry)"
+     },
+     {
+      "id": "i8",
+      "name": "chili flakes to taste (gluten free)"
+     },
+     {
+      "id": "i9",
+      "name": "salt"
+     },
+     {
+      "id": "i10",
+      "name": "rice to serve (pantry)"
+     }
+    ],
+    "steps": [
+     {
+      "id": "s1",
+      "kind": "prep",
+      "text": "Cube the butternut and chop the onion. Grate the ginger and garlic.",
+      "uses": [],
+      "minutes": 0
+     },
+     {
+      "id": "s2",
+      "kind": "cook",
+      "text": "Brown the chicken in a pot, set aside. Soften the onion, ginger, garlic and chili flakes.",
+      "uses": [],
+      "minutes": 0
+     },
+     {
+      "id": "s3",
+      "kind": "simmer",
+      "text": "Add the butternut, chicken and coconut milk. Simmer 25 to 30 minutes until tender.",
+      "uses": [],
+      "minutes": 0,
+      "timer": {
+       "minutes": 25,
+       "upTo": 30,
+       "label": "Step 3"
+      }
+     },
+     {
+      "id": "s4",
+      "kind": "serve",
+      "text": "Finish with lime juice and zest and salt. Serve with rice.",
+      "uses": [],
+      "minutes": 0
+     }
+    ]
+   }
+  }
+ ]
+}
