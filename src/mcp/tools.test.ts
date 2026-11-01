@@ -77,3 +77,18 @@ test("an approved week can still be changed until its pickup day has passed", as
   const past = await connect(store, "2000-01-07");
   assert.match((await past("week_add_item", { productCode: "SKYR_ST", qty: 1, reason: "x" })).text, /is applied, so it cannot be changed/);
 });
+
+test("past_weeks finds an ordered week after its pickup, with each dish's full recipe", async () => {
+  const store = new Store(":memory:");
+  weekWithDish(store, PAST);
+  store.switchWeek(PAST, "open", "applied");
+  weekWithDish(store, "2000-01-07");
+  store.switchWeek("2000-01-07", "open", "skipped");
+  const call = await connect(store);
+  assert.match((await call("week_view")).text, /No week is planned/);
+  const list = JSON.parse((await call("past_weeks")).text) as { pickup: string; dishes: { name: string }[] }[];
+  assert.deepEqual(list.map((w) => [w.pickup, w.dishes.map((d) => d.name)]), [[PAST, ["Curry"]]]);
+  const week = JSON.parse((await call("past_weeks", { pickup: PAST })).text) as { dishes: { recipe: { ingredients: string; method: string } }[] };
+  assert.deepEqual(week.dishes[0].recipe && [week.dishes[0].recipe.ingredients, week.dishes[0].recipe.method], ["chicken", "cook it"]);
+  assert.match((await call("past_weeks", { pickup: "2000-01-07" })).text, /No ordered week/);
+});

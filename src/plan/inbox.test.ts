@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { Context } from "../core/context.ts";
 import type { Household } from "../core/household.ts";
 import { Store } from "../core/store.ts";
-import { handleInbox, messageLanguage } from "./inbox.ts";
+import { handleInbox, messageLanguage, renderRecentWeeks } from "./inbox.ts";
 
 const household = {
   id: "test",
@@ -74,4 +74,18 @@ test("a reply follows the language the member wrote in, not the thread's", () =>
   // Swedish product names do not make an English message Swedish.
   assert.equal(messageLanguage("It used 2 x Kycklinglårfilé 700g and the butternut from the plan"), "English");
   assert.equal(messageLanguage("lårfilé"), "Swedish");
+});
+
+test("the intake prompt lists the weeks already ordered, without the week the message is about", () => {
+  const store = new Store(":memory:");
+  for (const [id, status] of [["2026-10-23", "applied"], ["2026-10-30", "applied"], ["2026-10-16", "skipped"], ["2026-11-06", "open"]] as const) {
+    store.claimWeek(id);
+    store.switchWeek(id, "drafting", "open");
+    const r = store.saveRecipe({ name: `Dish ${id}`, ingredients: "x", method: "y" }, "planner");
+    store.addDish(id, { name: `Dish ${id}`, portions: 4, recipeId: r.id }, "planner");
+    if (status !== "open") store.switchWeek(id, "open", status);
+  }
+  const ctx = { store, household } as unknown as Context;
+  assert.equal(renderRecentWeeks(ctx, "2026-11-06"), "- Pickup 2026-10-30: Dish 2026-10-30 (recipe 2)\n- Pickup 2026-10-23: Dish 2026-10-23 (recipe 1)");
+  assert.equal(renderRecentWeeks(ctx, "2026-10-30"), "- Pickup 2026-10-23: Dish 2026-10-23 (recipe 1)");
 });

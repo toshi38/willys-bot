@@ -4,7 +4,7 @@ import type { Context } from "../core/context.ts";
 import { judgePrice, recordSearchResults } from "../core/prices.ts";
 import { savePreferences } from "../core/household.ts";
 import { editable, localDate } from "../plan/week.ts";
-import type { PantryStatus } from "../core/store.ts";
+import type { PantryStatus, Store, Week, WeekStatus } from "../core/store.ts";
 
 // The household's MCP tools: the shared shopping list, the pantry, product
 // search with a price verdict, offers and price history. Nothing here touches the Willys
@@ -16,6 +16,14 @@ const text = (value: unknown) => ({
 });
 
 const PREFERENCES_HISTORY = "preferences.history";
+
+// A week that was approved has been, or is being, bought.
+const ORDERED: WeekStatus[] = ["approved", "applied"];
+
+// The household's ordered weeks, newest first.
+export function orderedWeeks(store: Store, limit: number): Week[] {
+  return store.weeks(limit * 3).filter((w) => ORDERED.includes(w.status)).slice(0, limit);
+}
 
 // readOnly leaves out the list-changing tools, for the weekly planner.
 export function buildServer(ctx: Context, member: string, { readOnly = false, week }: { readOnly?: boolean; week?: string } = {}): McpServer {
@@ -243,6 +251,38 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
       inputSchema: { id: z.number().int().optional(), search: z.string().optional() },
     },
     async ({ id, search }) => text(id !== undefined ? (store.recipe(id) ?? `No recipe ${id}`) : store.recipes(search).map((r) => ({ id: r.id, name: r.name, servings: r.servings }))),
+  );
+
+  // Weeks that were ordered, newest first, for "what did we buy" and "what
+  // were the recipes" once the week's pickup has passed and week_view no
+  // longer reaches it.
+  server.registerTool(
+    "past_weeks",
+    {
+      description:
+        "Weeks the household has ordered, newest first, with their dishes. Give a pickup date (YYYY-MM-DD) for one week in full: each dish's recipe and the items ordered. Use this when someone asks about food they already bought or how to cook it.",
+      inputSchema: {
+        pickup: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        limit: z.number().int().min(1).max(20).default(6),
+      },
+    },
+    async ({ pickup, limit }) => {
+      if (pickup) {
+        const w = store.week(pickup);
+        if (!w || !ORDERED.includes(w.status)) return text(`No ordered week for pickup ${pickup}`);
+        return text({
+          pickup: w.id,
+          status: w.status,
+          summary: w.summary,
+          dishes: store.dishes(w.id).map((d) => {
+            const r = d.recipeId ? store.recipe(d.recipeId) : null;
+            return { id: d.id, name: d.name, portions: d.portions, recipe: r && { id: r.id, servings: r.servings, ingredients: r.ingredients, method: r.method, notes: r.notes } };
+          }),
+          items: store.items(w.id).map((i) => ({ qty: i.qty, product: i.name ?? i.productCode, dishId: i.dishId })),
+        });
+      }
+      return text(orderedWeeks(store, limit).map((w) => ({ pickup: w.id, status: w.status, dishes: store.dishes(w.id).map((d) => ({ name: d.name, portions: d.portions, recipeId: d.recipeId })) })));
+    },
   );
 
   server.registerTool(

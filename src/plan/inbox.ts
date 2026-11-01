@@ -3,6 +3,7 @@ import { runClaude } from "../core/claude.ts";
 import type { Context } from "../core/context.ts";
 import { loadHousehold, memberByLogin } from "../core/household.ts";
 import type { Week } from "../core/store.ts";
+import { orderedWeeks } from "../mcp/tools.ts";
 import {
   address,
   addressedTo,
@@ -176,6 +177,7 @@ What you can change:
 - This week's shop (week_view, week_add_item, week_set_quantity, week_remove_item, dish_add, dish_remove, recipe_view): once a week is drafted, change it here, one item or dish at a time. Change exactly what they asked and nothing else: everything you do not touch stays as it is. Things to buy this week go straight into the week with week_add_item; the shopping list is for later weeks, or when no week is open.
 - To swap a dish: dish_remove it, dish_add the new one with its recipe (or a known recipeId), then week_add_item its ingredients with the new dish's id. Search for real products and follow the preferences, above all the dietary rules.
 - Items with source "request" were asked for by a member. Never remove or change one unless a member asks for that.
+- Food already bought (past_weeks, recipe_view): after pickup, the week they are cooking from is under Recent weeks, not This week's shop. When they ask for the recipes, what to cook, or what they ordered, answer from there: past_weeks with the pickup date gives each dish's full recipe. Asking about recipes is never a reason to plan or order new food.
 - A whole new set of dishes, or a plan when no week exists: only then, put instructions for the planner in redraft. Requests are kept.
 - Approving or skipping the week is done by replying yes or no to the plan email, or with the Approve and Skip buttons in Slack; if they seem to want that, tell them so.
 
@@ -220,6 +222,8 @@ export async function runIntake(ctx: Context, input: IntakeInput): Promise<z.inf
   } else {
     lines.push("", "## This week's shop", "No week is planned for the next pickup yet.");
   }
+  const recent = renderRecentWeeks(ctx, week?.id);
+  if (recent) lines.push("", "## Recent weeks (already ordered; full recipes with past_weeks)", recent);
   if (input.thread.length) lines.push("", "## Earlier in the thread", ...input.thread.map((m) => `${m.from}: ${m.text}`));
   lines.push("", "## Message", input.text || "(empty)", "", `Write your reply in ${messageLanguage(input.text)}, the language of the message above, even though the thread, the preferences or the product names may be in another language.`);
   const output = await runClaude(ctx, {
@@ -228,7 +232,7 @@ export async function runIntake(ctx: Context, input: IntakeInput): Promise<z.inf
     schema: INTAKE_SCHEMA,
     week: input.week?.id,
     tools: [
-      "week_view", "week_add_item", "week_set_quantity", "week_remove_item", "dish_add", "dish_remove", "recipe_view",
+      "week_view", "week_add_item", "week_set_quantity", "week_remove_item", "dish_add", "dish_remove", "recipe_view", "past_weeks",
       "list_view", "list_add", "list_update", "list_remove",
       "pantry_view", "pantry_set", "pantry_remove",
       "preferences_view", "preferences_update",
@@ -239,6 +243,19 @@ export async function runIntake(ctx: Context, input: IntakeInput): Promise<z.inf
   });
   ctx.household.preferences = loadHousehold(ctx.household.id).preferences;
   return IntakeOutput.parse(output);
+}
+
+// The last few ordered weeks and their dishes, other than the one the
+// message is about, so a question about food already bought finds it.
+export function renderRecentWeeks(ctx: Context, exceptWeek?: string, limit = 3): string {
+  return orderedWeeks(ctx.store, limit + 1)
+    .filter((w) => w.id !== exceptWeek)
+    .slice(0, limit)
+    .map((w) => {
+      const dishes = ctx.store.dishes(w.id).map((d) => `${d.name}${d.recipeId ? ` (recipe ${d.recipeId})` : ""}`);
+      return `- Pickup ${w.id}: ${dishes.length ? dishes.join(", ") : "no dishes"}`;
+    })
+    .join("\n");
 }
 
 // The language a member wrote in, from its common words: product names are
