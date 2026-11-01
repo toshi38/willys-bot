@@ -123,7 +123,7 @@ function redraftSetup() {
 
 const draft = (over: Partial<Draft>): Draft => ({
   summary: "One bean dish next to the curry that stays, with eggs for breakfast.",
-  dishes: [{ name: "Bean stew", portions: 4, why: "Cheap", recipeId: 0, recipe }],
+  dishes: [{ name: "Bean stew", portions: 4, why: "Cheap", origin: "", recipeId: 0, recipe }],
   lines: [{ productCode: "BEANS_ST", qty: 2, reason: "Stew", dish: 1, listItemIds: [], restocks: "" }],
   skipped: [],
   notes: "",
@@ -154,7 +154,7 @@ test("a dish reusing a known recipe needs no recipe of its own, and lines must p
   const { store, ctx, input, eggs } = redraftSetup();
   const known = store.saveRecipe({ name: "Bean stew", ingredients: "beans", method: "cook" }, "planner");
   const reused = draft({
-    dishes: [{ name: "Bean stew", portions: 4, why: "Again", recipeId: known.id, recipe: { servings: 0, ingredients: [], method: "" } }],
+    dishes: [{ name: "Bean stew", portions: 4, why: "Again", origin: "", recipeId: known.id, recipe: { servings: 0, ingredients: [], method: "" } }],
     skipped: [{ listItemId: eggs.id, reason: "None" }],
   });
   assert.deepEqual(checkDraft(ctx, reused, input), []);
@@ -164,4 +164,66 @@ test("a dish reusing a known recipe needs no recipe of its own, and lines must p
 
   const badLine = draft({ ...reused, lines: [...reused.lines, { productCode: "EGGS_ST", qty: 1, reason: "", dish: 3, listItemIds: [], restocks: "" }] });
   assert.deepEqual(checkDraft(ctx, badLine, input), ["Line EGGS_ST points at dish 3, which does not exist."]);
+});
+
+// A household that gets 6 suggestions and cooks 3, with a wildcard.
+function pickingSetup(plan: Record<string, unknown> = {}) {
+  const store = new Store(":memory:");
+  const ctx = { store, household: household({ meals: 3, suggestions: 6, wildcard: true, ...plan }) } as unknown as Context;
+  store.recordProduct(product("BEANS_ST", "Bönor", 50), "regular");
+  store.recordProduct(product("RICE_ST", "Ris", 30), "regular");
+  return { store, ctx };
+}
+const dish = (name: string, origin = "") => ({ name, portions: 4, why: "Good", origin, recipeId: 0, recipe });
+const sixDishes = (wildcards: number) =>
+  ["Chili", "Curry", "Stew", "Soup", "Bake", "Salad"].map((name, i) => dish(name, i < wildcards ? "Georgia" : ""));
+const linesFor = (n: number, qty = 1) => Array.from({ length: n }, (_, i) => ({ productCode: "BEANS_ST", qty, reason: "x", dish: i + 1, listItemIds: [], restocks: "" }));
+
+test("with picking, the prompt asks for the suggestions, one wildcard, and the budget for the dishes cooked", () => {
+  const { ctx } = pickingSetup({ budgetSek: 900 });
+  const prompt = buildPrompt(ctx, WEEK, none);
+  assert.match(prompt, /Suggest 6 dishes of about 4 portions each\. The household picks about 3 of the week's suggestions to cook, and only the picked dishes are bought\./);
+  assert.match(prompt, /Make exactly one of them a wildcard: home cooking from another country/);
+  assert.match(prompt, /Budget about 900 kr for the basics and 3 dishes\./);
+  // A redraft that keeps the picked wildcard asks for no new one.
+  const kept = buildPrompt(ctx, WEEK, { ...none, keptDishes: ["Khachapuri", "Chili"], keptWildcard: true });
+  assert.match(kept, /Suggest 4 dishes/);
+  assert.doesNotMatch(kept, /wildcard/i);
+});
+
+test("a picking draft needs exactly one wildcard with its country", () => {
+  const { ctx } = pickingSetup();
+  const base = draft({ summary: "Six varied dishes around this week's bean and rice offers.", lines: linesFor(6) });
+  assert.deepEqual(checkDraft(ctx, { ...base, dishes: sixDishes(1) }, none), []);
+  assert.ok(checkDraft(ctx, { ...base, dishes: sixDishes(0) }, none).includes("Make exactly one dish the wildcard, with its country in origin, not 0."));
+  assert.ok(checkDraft(ctx, { ...base, dishes: sixDishes(2) }, none).includes("Make exactly one dish the wildcard, with its country in origin, not 2."));
+  const noWildcard = pickingSetup({ wildcard: false }).ctx;
+  assert.ok(checkDraft(noWildcard, { ...base, dishes: sixDishes(1) }, none).includes("No wildcard is wanted: leave origin empty for every dish."));
+  assert.ok(checkDraft(ctx, { ...base, dishes: sixDishes(1).slice(0, 5), lines: linesFor(5) }, none).includes("Plan exactly 6 dishes, not 5."));
+});
+
+test("with picking, the budget counts the basics and the average dish times the dishes cooked", () => {
+  // Six dishes at 100 kr each and 30 kr of basics: 3 cooked come to 330 kr.
+  const { ctx } = pickingSetup({ budgetSek: 300 });
+  const lines = [...linesFor(6, 2), { productCode: "RICE_ST", qty: 1, reason: "basics", dish: 0, listItemIds: [], restocks: "" }];
+  const d = draft({ summary: "Six varied dishes around this week's bean and rice offers.", dishes: sixDishes(1), lines });
+  assert.deepEqual(checkDraft(ctx, d, none), [], "330 kr is within 15% of 300 kr, though all six dishes cost 630 kr");
+  const tight = pickingSetup({ budgetSek: 250 }).ctx;
+  assert.ok(checkDraft(tight, d, none).some((p) => /The basics and 3 average dishes come to about 330 kr, well over the 250 kr budget/.test(p)));
+});
+
+test("the prompt lists how the household rated recipes, best first, with comments", () => {
+  const { store, ctx } = pickingSetup();
+  store.claimWeek("2026-10-23");
+  const loved = store.saveRecipe({ name: "Khachapuri", ingredients: "x", method: "y" }, "planner");
+  const meh = store.saveRecipe({ name: "Bean soup", ingredients: "x", method: "y" }, "planner");
+  const d1 = store.addDish("2026-10-23", { name: "Khachapuri", portions: 4, recipeId: loved.id }, "planner");
+  const d2 = store.addDish("2026-10-23", { name: "Bean soup", portions: 4, recipeId: meh.id }, "planner");
+  store.rateDish(d1.id, "Carin", 5, "amazing");
+  store.rateDish(d1.id, "Stephen", 4);
+  store.rateDish(d2.id, "Carin", 2, "bland");
+  assert.equal(
+    section(buildPrompt(ctx, WEEK, none), "How the household rated dishes they cooked (best first)"),
+    `\n- Khachapuri (recipe ${loved.id}): 4.5 of 5 from 2 ratings: "amazing"\n- Bean soup (recipe ${meh.id}): 2 of 5 from 1 rating: "bland"`,
+  );
 });

@@ -209,7 +209,7 @@ export interface Env {
   stop: () => void;
 }
 
-export async function setup(opts: { slack?: boolean; meals?: number; rules?: object } = {}): Promise<Env> {
+export async function setup(opts: { slack?: boolean; meals?: number; rules?: object; plan?: object } = {}): Promise<Env> {
   const dir = mkdtempSync(join(tmpdir(), "wb-it-"));
   const households = join(dir, "households");
   const data = join(dir, "data");
@@ -228,7 +228,7 @@ export async function setup(opts: { slack?: boolean; meals?: number; rules?: obj
       mail: { address: "food@test.example", name: "food-bot", secret: "test-resend" },
       ...(opts.slack === false ? {} : { slack: { bot: "food" } }),
       ...(opts.rules ? { rules: opts.rules } : {}),
-      plan: { meals: opts.meals ?? 2, portionsPerMeal: 6, people: 2, language: "en" },
+      plan: { meals: opts.meals ?? 2, portionsPerMeal: 6, people: 2, language: "en", ...opts.plan },
     }),
   );
   writeFileSync(join(households, HOUSEHOLD, "preferences.md"), "# Food preferences\n- Strong flavours.\n");
@@ -303,8 +303,8 @@ export function goodDraft(listItemIds: number[] = []) {
   return {
     summary: "Two strong, lower calorie dishes built around this week's chicken and mince offers.",
     dishes: [
-      { name: "Chicken curry", portions: 6, why: "Thigh fillet on offer", recipeId: 0, recipe },
-      { name: "Chili con carne", portions: 6, why: "Lean mince", recipeId: 0, recipe: { ...recipe, ingredients: ["500 g mince", "2 tins beans"] } },
+      { name: "Chicken curry", portions: 6, why: "Thigh fillet on offer", origin: "", recipeId: 0, recipe },
+      { name: "Chili con carne", portions: 6, why: "Lean mince", origin: "", recipeId: 0, recipe: { ...recipe, ingredients: ["500 g mince", "2 tins beans"] } },
     ],
     lines: [
       { productCode: "CHICKEN_ST", qty: 2, reason: "Curry", dish: 1, listItemIds: [], restocks: "" },

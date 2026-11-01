@@ -20,6 +20,8 @@
   },
   "plan": {
     "meals": 5,
+    "suggestions": 8,
+    "wildcard": true,
     "portionsPerMeal": 6,
     "people": 4,
     "budgetSek": 1800,

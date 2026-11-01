@@ -220,3 +220,88 @@ describe("standing orders", () => {
     assert.match(env.claudeLog().at(-1)!.prompt, /Already in this week's shop \(fixed\)[\s\S]*4 x Naturell Skyr 400g/);
   });
 });
+
+describe("picking from more suggestions than the household cooks, and rating what they cooked", () => {
+  let env: Env;
+  beforeEach(async () => {
+    // Two suggestions a week, one of them cooked.
+    env = await setup({ meals: 1, plan: { suggestions: 2 } });
+    env.willys.setSlots(WEEK, [["18:00", "21:00"]]);
+  });
+  afterEach(() => env.stop());
+
+  const dishId = (name: string) => row<{ id: number }>(env, `SELECT id FROM dishes WHERE week_id = ? AND name = ?`, WEEK, name).id;
+
+  test("the plan has a Pick button per dish; ordering waits for a pick and buys only the picked dish", async () => {
+    await plannedWeek(env);
+    const plan = env.gateway.posts.find((p) => p.buttons.length)!;
+    assert.deepEqual(plan.buttons.map((b) => b.action), ["plan.pick", "plan.pick", "plan.approve", "plan.redraft", "plan.skip"]);
+    assert.match(plan.text, /## Suggestions\n1\. \*\*Chicken curry\*\* \(6 portions, about \d+ kr\)/);
+    assert.match(env.resend.sent[0].text, /1, 3, 5/);
+
+    const refused = await slack(env, { type: "action", from: stephen, action: { id: "plan.approve", value: WEEK }, where: where() });
+    assert.match(refused.reply ?? "", /Pick the dishes you want to cook first/);
+    assert.equal(row<{ status: string }>(env, `SELECT status FROM weeks WHERE id = ?`, WEEK).status, "open");
+    assert.equal(env.willys.cart.size, 0);
+
+    await slack(env, { type: "action", from: stephen, action: { id: "plan.pick", value: `${WEEK}:${dishId("Chili con carne")}` }, where: where() });
+    assert.equal(row<{ picked_by: string }>(env, `SELECT picked_by FROM dishes WHERE name = 'Chili con carne'`).picked_by, "stephen@test.example");
+    const updated = env.gateway.posts.filter((p) => p.path === "/update").at(-1)!;
+    assert.deepEqual(updated.buttons.map((b) => (b as { label?: string }).label), ["Pick 1. Chicken curry", "✓ 2. Chili con carne", "Order picked (1)", "New suggestions", "Skip this week"]);
+
+    await slack(env, { type: "action", from: stephen, action: { id: "plan.approve", value: WEEK }, where: where() });
+    assert.deepEqual(Object.fromEntries(env.willys.cart), { BEEF_ST: 2, BEANS_ST: 2, RICE_ST: 1, MILK_ST: 2 }, "the curry's chicken is not bought; basics and requests are");
+    assert.ok(row<{ removed_at: string }>(env, `SELECT removed_at FROM dishes WHERE name = 'Chicken curry'`).removed_at);
+    assert.equal(row<{ status: string }>(env, `SELECT status FROM weeks WHERE id = ?`, WEEK).status, "applied");
+  });
+
+  test("a reply of numbers picks dishes, and with yes orders them, without asking Claude", async () => {
+    await plannedWeek(env);
+    const { token } = row<{ token: string }>(env, `SELECT token FROM weeks WHERE id = ?`, WEEK);
+    await env.wb(["inbox"]);
+    env.resend.receive({ id: "p1", from: "Carin <carin@test.example>", subject: `Re: Willys order [wb:${token}]`, text: "1\n\nOn Wed, food-bot wrote:\n> the plan" });
+    await env.wb(["inbox"]);
+    assert.equal(row<{ picked_by: string }>(env, `SELECT picked_by FROM dishes WHERE name = 'Chicken curry'`).picked_by, "carin@test.example");
+    assert.match(env.resend.sent.at(-1)!.text, /Carin picked 1\. Chicken curry\. Reply \*\*yes\*\* to order them/);
+    assert.equal(env.willys.cart.size, 0, "picking alone does not order");
+
+    env.resend.receive({ id: "p2", from: "Carin <carin@test.example>", subject: `Re: Willys order [wb:${token}]`, text: "2 yes" });
+    await env.wb(["inbox"]);
+    assert.deepEqual(Object.fromEntries(env.willys.cart), { BEEF_ST: 2, BEANS_ST: 2, RICE_ST: 1, MILK_ST: 2 }, "2 yes picks exactly dish 2 and orders it");
+    assert.equal(env.claudeLog().length, 1, "only the planner ran");
+  });
+
+  test("numbers in the plan's Slack thread pick those dishes", async () => {
+    await plannedWeek(env);
+    const plan = env.gateway.posts.find((p) => p.buttons.length)!;
+    const res = await slack(env, { type: "message", from: stephen, text: "1 and 2", where: where(plan.ts!), thread: [] });
+    assert.match(res.reply ?? "", /Stephen picked 1\. Chicken curry, 2\. Chili con carne\. Tap Order picked/);
+    assert.equal(rows(env, `SELECT id FROM dishes WHERE week_id = ? AND picked_by IS NOT NULL`, WEEK).length, 2);
+  });
+
+  test("the survey asks about the last week's dishes once, and the star buttons record ratings", async () => {
+    assert.equal((await env.wb(["weeks"])).code, 0, "creates the database");
+    const db = env.db();
+    db.exec(`INSERT INTO weeks (id, token, status, created_at) VALUES ('2020-01-03', 'past0001', 'applied', '2020-01-01')`);
+    db.exec(`INSERT INTO dishes (week_id, name, portions, why, origin, added_by, added_at) VALUES ('2020-01-03', 'Chili', 6, '', NULL, 'planner', '2020-01-01'), ('2020-01-03', 'Khachapuri', 6, '', 'Georgia', 'planner', '2020-01-01')`);
+    db.close();
+
+    const res = await env.wb(["survey", "--force"]);
+    assert.match(res.stdout, /Asked how the food from 2020-01-03 was \(2 dishes\)/);
+    const mail = env.resend.sent.at(-1)!;
+    assert.match(mail.subject, /How was the food from .* \[wb:past0001\]/);
+    assert.match(mail.text, /1\. \*\*Chili\*\*\n2\. \*\*Khachapuri\*\* \(wildcard from Georgia\)/);
+    const posts = env.gateway.posts.filter((p) => p.buttons.some((b) => b.action === "dish.rate"));
+    assert.deepEqual(posts.map((p) => p.text), ["**Chili**: not rated yet", "**Khachapuri** 🌍 Georgia: not rated yet"]);
+
+    const chili = row<{ id: number }>(env, `SELECT id FROM dishes WHERE name = 'Chili'`).id;
+    await slack(env, { type: "action", from: stephen, action: { id: "dish.rate", value: `${chili}:4` }, where: { channel: "C0FOOD", ts: posts[0]!.ts!, threadTs: null } });
+    assert.deepEqual({ ...row<object>(env, `SELECT member, stars FROM ratings WHERE dish_id = ?`, chili) }, { member: "Stephen", stars: 4 });
+    const shown = env.gateway.posts.filter((p) => p.path === "/update").at(-1)!;
+    assert.equal(shown.ts, posts[0]!.ts);
+    assert.equal(shown.text, "**Chili**: ★★★★☆ Stephen");
+
+    const again = await env.wb(["survey", "--force"]);
+    assert.match(again.stdout, /No survey to send/);
+  });
+});

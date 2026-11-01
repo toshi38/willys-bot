@@ -46,8 +46,8 @@ function goodDraft(listItemId: number): Draft {
   return {
     summary: "Two strong, lower calorie dishes built around this week's chicken and mince offers.",
     dishes: [
-      { name: "Chicken curry", portions: 6, why: "Thigh fillet on offer", recipeId: 0, recipe },
-      { name: "Chili con carne", portions: 6, why: "Lean mince", recipeId: 0, recipe: { ...recipe, ingredients: ["500 g mince", "2 tins beans"] } },
+      { name: "Chicken curry", portions: 6, why: "Thigh fillet on offer", origin: "", recipeId: 0, recipe },
+      { name: "Chili con carne", portions: 6, why: "Lean mince", origin: "", recipeId: 0, recipe: { ...recipe, ingredients: ["500 g mince", "2 tins beans"] } },
     ],
     lines: [
       { productCode: "SKYR_ST", qty: 1, reason: "Carin's skyr", dish: 0, listItemIds: [listItemId], restocks: "" },

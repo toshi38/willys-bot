@@ -14,7 +14,12 @@ household's recipe library) and the items to buy. Every item says why it is ther
 - **staple**: the planner's own pick, a restock or an everyday basic.
 
 On Wednesday morning the planner drafts the week for the next pickup, unless that week already
-exists. The draft is checked before anything is saved or sent (the right number of dishes, each
+exists. With `plan.suggestions` above `plan.meals` (for example 6 and 3), it suggests more
+dishes than the household cooks, and with `plan.wildcard` one of them is home cooking from
+another country they probably do not know. Members pick the dishes they want with the Pick
+buttons in Slack, by replying with their numbers ("1, 3, 5", or "1, 3, 5 yes" to order at
+once), or in their own words; ordering waits for at least one pick, and only the picked dishes
+are bought, with every request and basic. The draft is checked before anything is saved or sent (the right number of dishes, each
 with a recipe and products, only known product codes, every list item bought or skipped, a real
 summary); a draft that fails is retried once, and a second failure stops the run.
 
@@ -22,6 +27,14 @@ After that the week changes only through edits: Claude changes the one item or d
 asks about, and the household is shown the updated plan. Asking for a whole new set of dishes
 redrafts the dishes and keeps every request. Approving fills the cart from the week's items and
 sends the week's recipes.
+
+## Ratings
+
+The day before each pickup food-bot asks how the food from the last one was: in Slack, a post
+per dish with 1 to 5 star buttons, and by email, answered with scores and comments ("1: 4, a bit
+salty"). Members can also just say how a dish was at any time. The planner sees every recipe's
+average and comments: it brings back what was rated 4 or more and never suggests a recipe rated
+2 or less again. `npm run wb -- survey --force` asks now.
 
 ## Email
 

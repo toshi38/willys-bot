@@ -18,6 +18,7 @@ const household = {
     members: [{ name: "Carin", email: "carin@lau.engineering", tailscale: [] }],
     mail: { address: "food@ai.lau.engineering", name: "food-bot", secret: "test" },
     slack: { bot: "food" },
+    plan: { meals: 3, people: 2, portionsPerMeal: 6, wildcard: false, language: "en" },
   },
 } as unknown as Household;
 

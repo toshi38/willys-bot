@@ -1,9 +1,10 @@
 import type { Context } from "../core/context.ts";
 import { memberByLogin } from "../core/household.ts";
 import { snapshotCampaigns } from "../core/prices.ts";
-import type { Week, WeekItem } from "../core/store.ts";
+import type { Dish, Week, WeekItem } from "../core/store.ts";
 import { sendToMembers } from "../notify/email.ts";
 import { updateSlack, type SlackButton, type SlackRef } from "../notify/slack.ts";
+import { dropUnpicked, isPicked, picking, pickProblem } from "./picks.ts";
 import { makeDraft, writeDraft } from "./planner.ts";
 import { bookPickupSlot } from "./slots.ts";
 import { localDate, nextPickup, postToWeek, tellHousehold, toSlack, weekThread } from "./week.ts";
@@ -94,11 +95,13 @@ export async function redraftWeek(ctx: Context, week: Week, instructions: string
   const who = memberByLogin(ctx.household, by)?.name ?? by;
   if (!store.switchWeek(week.id, "open", "drafting")) return { done: false, message: `the week for pickup ${week.id} is ${store.week(week.id)?.status ?? "gone"}, so it cannot get new dishes now` };
   try {
+    // Dishes a member added or picked stay; the planner's others are
+    // replaced.
     const dishes = store.dishes(week.id);
-    const old = dishes.filter((d) => d.addedBy === "planner");
-    const kept = dishes.filter((d) => d.addedBy !== "planner");
+    const kept = dishes.filter(isPicked);
+    const old = dishes.filter((d) => !isPicked(d));
     const fixed = store.items(week.id).filter((i) => i.source === "request" || (i.dishId !== null && kept.some((d) => d.id === i.dishId)));
-    const draft = await makeDraft(ctx, week.id, { fixed, keptDishes: kept.map((d) => d.name), instructions, replacing: old.map((d) => d.name) });
+    const draft = await makeDraft(ctx, week.id, { fixed, keptDishes: kept.map((d) => d.name), keptWildcard: kept.some((d) => d.origin), instructions, replacing: old.map((d) => d.name) });
     store.transaction(() => {
       for (const d of old) store.removeDish(d.id, who);
       for (const i of store.items(week.id)) if (i.source === "staple") store.removeItem(i.id, who);
@@ -169,7 +172,7 @@ async function announce(ctx: Context, week: Week, emailIntro: string | undefined
   let shown = false;
   if (emailIntro !== undefined) {
     const ids = JSON.parse(store.get(idsKey(week.id)) ?? "[]") as string[];
-    const markdown = [emailIntro, renderWeek(ctx, week), EMAIL_FOOTER(week)].filter(Boolean).join("\n\n");
+    const markdown = [emailIntro, renderWeek(ctx, week), EMAIL_FOOTER(ctx, week)].filter(Boolean).join("\n\n");
     const sent = await sendToMembers(household, { subject: `Re: ${subject(week)}`, inReplyTo: inReplyTo ?? ids.at(-1), markdown });
     store.set(idsKey(week.id), JSON.stringify([...ids, sent]));
     shown = true;
@@ -177,7 +180,7 @@ async function announce(ctx: Context, week: Week, emailIntro: string | undefined
   const post = slackPost(ctx, week.id);
   if (post) {
     try {
-      shown = (await updateSlack(household, post, slackPlanText(ctx, week), planButtons(week))) || shown;
+      shown = (await updateSlack(household, post, slackPlanText(ctx, week), planButtons(ctx, week))) || shown;
     } catch (err) {
       // Not marked as shown, so the next change or run tries again.
       console.error(`Slack: ${err instanceof Error ? err.message : err}`);
@@ -191,11 +194,11 @@ async function announce(ctx: Context, week: Week, emailIntro: string | undefined
 async function sendWeek(ctx: Context, week: Week): Promise<void> {
   const { store, household } = ctx;
   const body = renderWeek(ctx, week);
-  const messageId = await sendToMembers(household, { subject: subject(week), markdown: `${body}\n\n${EMAIL_FOOTER(week)}` });
+  const messageId = await sendToMembers(household, { subject: subject(week), markdown: `${body}\n\n${EMAIL_FOOTER(ctx, week)}` });
   store.set(idsKey(week.id), JSON.stringify([messageId]));
   store.updateWeek(week.id, { sentAt: new Date().toISOString(), announcedVersion: week.version });
   await toSlack(async () => {
-    const ref = await postToWeek(ctx, slackPlanText(ctx, week), { buttons: planButtons(week), broadcast: true });
+    const ref = await postToWeek(ctx, slackPlanText(ctx, week), { buttons: planButtons(ctx, week), broadcast: true });
     const thread = await weekThread(ctx);
     if (ref && thread) {
       store.set(slackKey(week.id), JSON.stringify(ref));
@@ -205,23 +208,42 @@ async function sendWeek(ctx: Context, week: Week): Promise<void> {
   });
 }
 
-const EMAIL_FOOTER = (week: Week) =>
-  `---\nReply **yes** to fill the cart and book a pickup slot, **no** to skip this week, or write what to change: I change just that and leave the rest. You can also email me any time to add to the list or update the pantry or your preferences.\n(week ${week.token})`;
+const EMAIL_FOOTER = (ctx: Context, week: Week) =>
+  picking(ctx, week)
+    ? `---\nReply with the numbers of the dishes you want to cook (for example **1, 3, 5**), then **yes** to order them with the basics; **1, 3, 5 yes** does both. Reply **new suggestions** to replace the dishes nobody picked, **no** to skip this week, or write what to change. You can also email me any time to add to the list or update the pantry or your preferences.\n(week ${week.token})`
+    : `---\nReply **yes** to fill the cart and book a pickup slot, **no** to skip this week, or write what to change: I change just that and leave the rest. You can also email me any time to add to the list or update the pantry or your preferences.\n(week ${week.token})`;
 
 function subject(week: Week): string {
   return `Willys order: pickup ${pickupLabel(week.id)} [wb:${week.token}]`;
 }
 
-function slackPlanText(ctx: Context, week: Week): string {
-  return `**Willys order: pickup ${pickupLabel(week.id)}**\n\n${renderWeek(ctx, week)}\n\nApprove to fill the cart and book a pickup slot, or reply in this thread with what to change.`;
+// The plan's Slack post: the week, then how to act on it, or once decided,
+// the outcome instead.
+function slackPlanText(ctx: Context, week: Week, outcome?: string): string {
+  const how = picking(ctx, week)
+    ? "Pick the dishes you want to cook with the buttons, or reply with their numbers (for example 1, 3, 5). **Order picked** fills the cart with them and the basics; **New suggestions** replaces the dishes nobody picked. Reply in this thread with anything else to change."
+    : "Approve to fill the cart and book a pickup slot, or reply in this thread with what to change.";
+  return `**Willys order: pickup ${pickupLabel(week.id)}**\n\n${renderWeek(ctx, week)}\n\n${outcome ? `*${outcome}*` : how}`;
 }
 
-function planButtons(week: Week): SlackButton[] {
+function planButtons(ctx: Context, week: Week): SlackButton[] {
+  if (!picking(ctx, week)) {
+    return [
+      { action: "plan.approve", label: "Approve", value: week.id, style: "primary" },
+      { action: "plan.skip", label: "Skip this week", value: week.id },
+    ];
+  }
+  const dishes = ctx.store.dishes(week.id);
+  const picked = dishes.filter(isPicked).length;
   return [
-    { action: "plan.approve", label: "Approve", value: week.id, style: "primary" },
+    ...dishes.map((d, i) => ({ action: "plan.pick", label: `${isPicked(d) ? "✓ " : "Pick "}${i + 1}. ${short(d.name, 30)}`, value: `${week.id}:${d.id}` })),
+    { action: "plan.approve", label: `Order picked (${picked})`, value: week.id, style: "primary" as const },
+    { action: "plan.redraft", label: "New suggestions", value: week.id },
     { action: "plan.skip", label: "Skip this week", value: week.id },
   ];
 }
+
+const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
 
 function slackPost(ctx: Context, weekId: string): SlackRef | null {
   const raw = ctx.store.get(slackKey(weekId));
@@ -232,7 +254,7 @@ function slackPost(ctx: Context, weekId: string): SlackRef | null {
 // whichever way (email, Slack or the web UI) the decision came.
 async function markSlackPlan(ctx: Context, week: Week, outcome: string): Promise<void> {
   const post = slackPost(ctx, week.id);
-  if (post) await toSlack(() => updateSlack(ctx.household, post, `${slackPlanText(ctx, week).split("\n\nApprove to fill")[0]}\n\n*${outcome}*`));
+  if (post) await toSlack(() => updateSlack(ctx.household, post, slackPlanText(ctx, ctx.store.week(week.id) ?? week, outcome)));
 }
 
 // Acts on a member approving or skipping the week.
@@ -248,9 +270,13 @@ export async function decide(ctx: Context, week: Week, kind: "approve" | "skip",
     await markSlackPlan(ctx, week, `Skipped this week by ${who}`);
     return [`${week.id}: skipped by ${by}`];
   }
+  const problem = pickProblem(ctx, week);
+  if (problem) throw new Error(problem);
   if (opts.dryRun) return [await apply(ctx, week, opts)];
   if (!store.switchWeek(week.id, "open", "approved")) throw new Error(`Week ${week.id} changed before it could be approved`);
   store.updateWeek(week.id, { decidedBy: by, decidedAt });
+  // Only the picked dishes are bought.
+  dropUnpicked(ctx, week, "food-bot");
   await markSlackPlan(ctx, week, `Approved by ${who}`);
   return [`${week.id}: approved by ${by}`, await apply(ctx, store.week(week.id)!, opts)];
 }
@@ -331,24 +357,37 @@ export async function bookSlot(ctx: Context, week: Week, cartNote: string): Prom
 
 // The week as the household sees it: dishes, then what to buy grouped by
 // why it is bought, so requests and each dish's ingredients are easy to
-// find.
+// find. While the household picks dishes, the dishes are numbered with
+// what each costs, and the shopping shows the basics and the picked
+// dishes: what would be ordered now.
 export function renderWeek(ctx: Context, week: Week): string {
-  const { store, household } = ctx;
+  const { store } = ctx;
+  const choosing = picking(ctx, week);
   const dishes = store.dishes(week.id);
   const items = store.items(week.id);
-  const total = items.reduce((sum, i) => sum + i.qty * (i.unitPrice ?? 0), 0);
+  const sum = (list: WeekItem[]) => list.reduce((total, i) => total + i.qty * (i.unitPrice ?? 0), 0);
+  const forDish = (d: Dish) => items.filter((i) => i.source !== "request" && i.dishId === d.id);
+  const shown = dishes.filter((d) => !choosing || isPicked(d));
   const line = (i: WeekItem) => `- ${i.qty} x ${i.name ?? i.productCode}${i.unitPrice !== null ? `, ${fmt(i.unitPrice)} kr` : ""}.${i.reason ? ` ${i.reason}` : ""}`;
-  const out = [week.summary, "", "## Dishes", ...dishes.map((d) => `- **${d.name}** (${d.portions} portions). ${d.why}`), "", `## Shopping (about ${Math.round(total)} kr)`];
+  const origin = (d: Dish) => (d.origin ? ` 🌍 *Wildcard from ${d.origin}.*` : "");
+  const dishLines = choosing
+    ? dishes.map((d, i) => `${i + 1}. ${isPicked(d) ? "✅ " : ""}**${d.name}** (${d.portions} portions, about ${Math.round(sum(forDish(d)))} kr).${origin(d)} ${d.why}`)
+    : dishes.map((d) => `- **${d.name}** (${d.portions} portions).${origin(d)} ${d.why}`);
   const requests = items.filter((i) => i.source === "request");
+  const rest = items.filter((i) => i.source !== "request" && (i.dishId === null || !dishes.some((d) => d.id === i.dishId)));
+  const bought = [...requests, ...rest, ...shown.flatMap(forDish)];
+  const heading = choosing
+    ? `## Shopping for the basics${shown.length ? ` and the ${shown.length} picked dish${shown.length === 1 ? "" : "es"}` : ", until you pick dishes"} (about ${Math.round(sum(bought))} kr)`
+    : `## Shopping (about ${Math.round(sum(bought))} kr)`;
+  const out = [week.summary, "", choosing ? "## Suggestions" : "## Dishes", ...dishLines, "", heading];
   if (requests.length) {
     out.push("", "**Asked for**");
     for (const i of requests) out.push(`${line(i)}${i.requestedBy ? ` (${i.requestedBy})` : ""}`);
   }
-  for (const d of dishes) {
-    const forDish = items.filter((i) => i.source !== "request" && i.dishId === d.id);
-    if (forDish.length) out.push("", `**For ${d.name}**`, ...forDish.map(line));
+  for (const d of shown) {
+    const list = forDish(d);
+    if (list.length) out.push("", `**For ${d.name}**`, ...list.map(line));
   }
-  const rest = items.filter((i) => i.source !== "request" && (i.dishId === null || !dishes.some((d) => d.id === i.dishId)));
   if (rest.length) out.push("", "**Basics and restocks**", ...rest.map(line));
   if (week.notes) out.push("", "## Notes", week.notes);
   return out.join("\n");

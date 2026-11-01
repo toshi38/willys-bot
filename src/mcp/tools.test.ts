@@ -13,7 +13,7 @@ const day = (offset: number) => localDate(new Date(Date.now() + offset * 86_400_
 const NEXT = day(3);
 const PAST = day(-4);
 
-const household = { id: "test", dir: "/nonexistent", preferences: "", config: { name: "Test", members: [{ name: "Carin", email: "carin@lau.engineering", tailscale: [] }] } } as unknown as Household;
+const household = { id: "test", dir: "/nonexistent", preferences: "", config: { name: "Test", members: [{ name: "Carin", email: "carin@lau.engineering", tailscale: [] }], plan: { meals: 3, people: 2, portionsPerMeal: 6, wildcard: false, language: "en" } } } as unknown as Household;
 
 const ruled = { ...household, config: { ...household.config, rules: { avoidBrands: ["Garant"], avoid: [], glutenFree: true, staples: [] } } } as unknown as Household;
 
@@ -157,4 +157,33 @@ test("with no Eldorado spices, an Eldorado spice is refused and Eldorado tomatoe
   assert.notEqual((await add("E_TOM")).isError, true);
   assert.deepEqual(store.items(NEXT).map((i) => i.productCode), ["E_TOM"]);
   assert.equal(store.productCategory("E_SPICE"), categories.E_SPICE);
+});
+
+test("dish_pick picks and unpicks dishes only for a household that picks", async () => {
+  const store = new Store(":memory:");
+  const curry = weekWithDish(store, NEXT);
+  const chili = store.addDish(NEXT, { name: "Chili", portions: 6 }, "planner");
+  const picking = { ...household, config: { ...household.config, plan: { ...household.config.plan, suggestions: 6 } } } as unknown as Household;
+  const call = await connect(store, undefined, picking);
+  const res = await call("dish_pick", { dishIds: [chili.id] });
+  assert.equal(res.error, false, res.text);
+  assert.deepEqual(JSON.parse(res.text).dishes.map((d: { name: string; picked: boolean }) => [d.name, d.picked]), [["Curry", false], ["Chili", true]]);
+  await call("dish_pick", { dishIds: [chili.id], picked: false });
+  assert.equal(store.dish(chili.id)?.pickedBy, null);
+  assert.match((await call("dish_pick", { dishIds: [999] })).text, /Dish 999 is not in this week/);
+  const everyDish = await connect(store);
+  assert.match((await everyDish("dish_pick", { dishIds: [curry.id] })).text, /orders every dish/);
+});
+
+test("dish_rate rates dishes from ordered weeks, not suggestions still waiting", async () => {
+  const store = new Store(":memory:");
+  const waiting = weekWithDish(store, NEXT);
+  store.claimWeek(PAST);
+  const eaten = store.addDish(PAST, { name: "Chili", portions: 6 }, "planner");
+  store.switchWeek(PAST, "drafting", "applied");
+  const call = await connect(store);
+  assert.equal((await call("dish_rate", { dishId: eaten.id, stars: 4, comment: "a bit dry" })).error, false);
+  assert.deepEqual(store.dishRatings(eaten.id).map((r) => [r.member, r.stars, r.comment]), [["Carin", 4, "a bit dry"]]);
+  assert.match((await call("dish_rate", { dishId: waiting.id, stars: 5 })).text, /not a dish the household ordered/);
+  assert.equal((await call("dish_rate", { dishId: eaten.id, stars: 6 })).error, true);
 });

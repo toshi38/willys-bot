@@ -8,6 +8,7 @@ import { sendToMembers } from "./notify/email.ts";
 import { handleInbox } from "./plan/inbox.ts";
 import { postToWeek, toSlack } from "./plan/week.ts";
 import { handleSlack, type SlackRequest } from "./plan/slack.ts";
+import { sendSurvey } from "./plan/survey.ts";
 import { apply, bookSlot, planWeek, redraftWeek, renderWeek } from "./plan/weekly.ts";
 
 const USAGE = `Usage: npm run wb -- <command> [--household <id>]
@@ -30,6 +31,8 @@ const USAGE = `Usage: npm run wb -- <command> [--household <id>]
   week [<pickup-date>]    show a week's shop (default: the open week)
   inbox [--dry-run]       act on new email to the bot (--dry-run lists it without acting)
   slack                   handle one slack-gateway request (JSON on stdin, response JSON on stdout)
+  survey [--force]        ask how the last pickup's food was, if it is the day before pickup
+                          (--force asks now; the inbox run sends it on its own)
   apply <pickup-date>     fill the cart and book a slot for a week without waiting for a reply
   book-slot <pickup-date> book the pickup slot for a week whose cart is already filled, and confirm it
                           (for a failed week, only after checking on willys.se that the cart is complete)
@@ -162,6 +165,10 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
     }
     case "inbox": {
       for (const line of await handleInbox(ctx, { dryRun: values["dry-run"] === true })) console.log(line);
+      return;
+    }
+    case "survey": {
+      console.log((await sendSurvey(ctx, { force: values.force === true })) ?? "No survey to send: not the day before pickup, or already asked about the last week");
       return;
     }
     case "apply": {

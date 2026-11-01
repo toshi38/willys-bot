@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Context } from "../core/context.ts";
 import { judgePrice, recordSearchResults } from "../core/prices.ts";
-import { savePreferences } from "../core/household.ts";
+import { picksDishes, savePreferences } from "../core/household.ts";
 import { brokenRule, glutenRisk, needsCategory, productFacts, ruleProblems, type ProductFacts } from "../core/rules.ts";
 import { editable, localDate } from "../plan/week.ts";
 import type { PantryStatus, Store, Week, WeekStatus } from "../core/store.ts";
@@ -137,7 +137,11 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
     const w = openWeek();
     return {
       week: { pickup: w.id, status: w.status, summary: w.summary, notes: w.notes },
-      dishes: store.dishes(w.id).map((d) => ({ id: d.id, name: d.name, portions: d.portions, why: d.why, recipeId: d.recipeId })),
+      dishes: store.dishes(w.id).map((d, i) => ({
+        number: i + 1, id: d.id, name: d.name, portions: d.portions, why: d.why, recipeId: d.recipeId,
+        ...(d.origin ? { wildcardFrom: d.origin } : {}),
+        ...(picksDishes(household) ? { picked: d.pickedBy !== null || d.addedBy !== "planner" } : {}),
+      })),
       items: store.items(w.id).map((i) => ({
         id: i.id, qty: i.qty, product: i.name ?? i.productCode, productCode: i.productCode, unitPrice: i.unitPrice,
         source: i.source, requestedBy: i.requestedBy, dishId: i.dishId, reason: i.reason,
@@ -253,13 +257,56 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
     },
   );
 
+  if (!readOnly) server.registerTool(
+    "dish_pick",
+    {
+      description:
+        "Pick dishes the household wants to cook this week, or unpick them. When the week has more suggestions than the household cooks, only picked dishes are ordered. Changes only the dishes you name.",
+      inputSchema: { dishIds: z.array(z.number().int()).min(1), picked: z.boolean().default(true) },
+    },
+    async ({ dishIds, picked }) => {
+      const w = openWeek();
+      if (w.status !== "open") throw new Error(`The week for pickup ${w.id} is already ${w.status}: its dishes were picked when it was ordered.`);
+      if (!picksDishes(household)) throw new Error("This household orders every dish; there is nothing to pick.");
+      for (const id of dishIds) if (store.dish(id)?.weekId !== w.id || store.dish(id)?.removedAt) throw new Error(`Dish ${id} is not in this week`);
+      for (const id of dishIds) store.pickDish(id, picked, member);
+      return text(weekView());
+    },
+  );
+
+  if (!readOnly) server.registerTool(
+    "dish_rate",
+    {
+      description:
+        "Record how a dish the household cooked was: 1 to 5 stars and what they said about it. Use the dish id from Recent weeks or week_view. Rating again replaces the person's earlier rating of that dish. The planner suggests more of what is rated highly and drops what is rated 2 or less.",
+      inputSchema: {
+        dishId: z.number().int(),
+        stars: z.number().int().min(1).max(5),
+        comment: z.string().optional().describe("Their words about it, short"),
+      },
+    },
+    async ({ dishId, stars, comment }) => {
+      const d = store.dish(dishId);
+      const w = d ? store.week(d.weekId) : null;
+      if (!d || d.removedAt || !w || !ORDERED.includes(w.status)) throw new Error(`Dish ${dishId} is not a dish the household ordered`);
+      return text(store.rateDish(dishId, member, stars, comment));
+    },
+  );
+
   server.registerTool(
     "recipe_view",
     {
       description: "Read a recipe by id, or search the household's recipes by name.",
       inputSchema: { id: z.number().int().optional(), search: z.string().optional() },
     },
-    async ({ id, search }) => text(id !== undefined ? (store.recipe(id) ?? `No recipe ${id}`) : store.recipes(search).map((r) => ({ id: r.id, name: r.name, servings: r.servings }))),
+    async ({ id, search }) => {
+      const ratings = new Map(store.recipeRatings().map((r) => [r.recipeId, { average: r.average, count: r.count, comments: r.comments }]));
+      if (id !== undefined) {
+        const r = store.recipe(id);
+        return text(r ? { ...r, ...(ratings.has(id) ? { ratings: ratings.get(id) } : {}) } : `No recipe ${id}`);
+      }
+      return text(store.recipes(search).map((r) => ({ id: r.id, name: r.name, servings: r.servings, ...(ratings.has(r.id) ? { rated: ratings.get(r.id)!.average } : {}) })));
+    },
   );
 
   // Weeks that were ordered, newest first, for "what did we buy" and "what
@@ -285,7 +332,8 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
           summary: w.summary,
           dishes: store.dishes(w.id).map((d) => {
             const r = d.recipeId ? store.recipe(d.recipeId) : null;
-            return { id: d.id, name: d.name, portions: d.portions, recipe: r && { id: r.id, servings: r.servings, ingredients: r.ingredients, method: r.method, notes: r.notes } };
+            const ratings = store.dishRatings(d.id).map((x) => ({ member: x.member, stars: x.stars, comment: x.comment }));
+            return { id: d.id, name: d.name, portions: d.portions, ...(ratings.length ? { ratings } : {}), recipe: r && { id: r.id, servings: r.servings, ingredients: r.ingredients, method: r.method, notes: r.notes } };
           }),
           items: store.items(w.id).map((i) => ({ qty: i.qty, product: i.name ?? i.productCode, dishId: i.dishId })),
         });

@@ -114,6 +114,9 @@ export interface Scenario {
   from: "Carin" | "Stephen";
   text: string;
   thread?: { from: string; text: string }[];
+  // Changes to the household's plan settings, such as more suggestions
+  // than meals so the household picks dishes.
+  plan?: Record<string, unknown>;
   // Everything that is wrong with the outcome; empty means it passed.
   check: (s: Seen, store: Store) => string[];
 }
@@ -147,7 +150,66 @@ function unchanged(s: Seen): string[] {
   return [...onlyChanged(s, []), ...dishesKept(s), ...(s.before.dishes.length !== s.after.dishes.length ? ["dishes changed"] : [])];
 }
 
+// The past week's curry and its ratings, for the rating scenarios.
+function curryRatings(store: Store): { member: string; stars: number; comment: string | null }[] {
+  for (const w of store.weeks(10)) {
+    const dish = store.dishes(w.id).find((d) => /curry/i.test(d.name));
+    if (dish) return store.dishRatings(dish.id).map((r) => ({ member: r.member, stars: r.stars, comment: r.comment }));
+  }
+  return [];
+}
+
 export const SCENARIOS: Scenario[] = [
+  {
+    name: "pick-by-name",
+    about: "With six suggestions a week the household picks the dishes to cook (1 Nov)",
+    week: "open",
+    from: "Carin",
+    plan: { suggestions: 6 },
+    text: "Let's go with the chili and the braised beef this week.",
+    check: (s) => {
+      const picked = s.after.dishes.filter((d) => d.pickedBy !== null).map((d) => d.name);
+      const want = DISHES.filter((d) => d.key !== "stirfry").map((d) => d.name);
+      return [
+        ...(JSON.stringify(picked.sort()) === JSON.stringify([...want].sort()) ? [] : [`picked ${JSON.stringify(picked)}, not the chili and the braise`]),
+        ...unchanged(s),
+        ...noRedraft(s),
+        ...language(s, "English"),
+      ];
+    },
+  },
+  {
+    name: "rate-in-words",
+    about: "Ratings feed the planner; members say how a dish was in their own words (1 Nov)",
+    week: "past",
+    from: "Carin",
+    text: "The coconut curry last week was amazing, but a bit too much lime for me.",
+    check: (s, store) => {
+      const r = curryRatings(store);
+      return [
+        ...(r.length === 1 && r[0]!.member === "Carin" && r[0]!.stars >= 4 ? [] : [`ratings ${JSON.stringify(r)}, not one of 4 or 5 from Carin`]),
+        ...(r[0]?.comment && /lime/i.test(r[0].comment) ? [] : ["the comment about the lime is not recorded"]),
+        ...noRedraft(s),
+        ...language(s, "English"),
+      ];
+    },
+  },
+  {
+    name: "rate-survey-reply",
+    about: "A reply to the survey gives scores by the dishes' numbers (1 Nov)",
+    week: "past",
+    from: "Stephen",
+    text: "1: 3, bit bland, needed more chili",
+    thread: [{ from: "food-bot", text: "How was the food from last Friday?\n1. Coconut chicken and butternut curry\nReply with a score from 1 to 5 for each dish you cooked." }],
+    check: (s, store) => {
+      const r = curryRatings(store);
+      return [
+        ...(r.length === 1 && r[0]!.member === "Stephen" && r[0]!.stars === 3 ? [] : [`ratings ${JSON.stringify(r)}, not a 3 from Stephen`]),
+        ...(r[0]?.comment && /bland|chili/i.test(r[0].comment) ? [] : ["the comment is not recorded"]),
+        ...noRedraft(s),
+      ];
+    },
+  },
   {
     name: "quantity-change",
     about: "Carin asked for 2 skyr and a later revision lost it (20 Oct)",

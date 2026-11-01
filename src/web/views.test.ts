@@ -23,7 +23,7 @@ const week = (over: Partial<Week> = {}): Week => ({
   ...over,
 });
 
-const dish = (over: Partial<Dish> = {}): Dish => ({ id: 1, weekId: "2026-10-30", recipeId: null, name: "Chicken curry", portions: 6, why: "Thigh fillet on offer", addedBy: "planner", removedAt: null, ...over });
+const dish = (over: Partial<Dish> = {}): Dish => ({ id: 1, weekId: "2026-10-30", recipeId: null, name: "Chicken curry", portions: 6, why: "Thigh fillet on offer", origin: null, pickedBy: null, addedBy: "planner", removedAt: null, ...over });
 
 const item = (over: Partial<WeekItem> = {}): WeekItem => ({
   id: 1,

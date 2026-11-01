@@ -121,8 +121,35 @@ export interface Dish {
   name: string;
   portions: number;
   why: string;
+  // The country a wildcard dish comes from; null for the others.
+  origin: string | null;
+  // Who picked the dish to cook this week, for households that pick some
+  // of the suggestions (see picksDishes).
+  pickedBy: string | null;
   addedBy: string;
   removedAt: string | null;
+}
+
+// A member's score for a dish they cooked, 1 to 5, with what they said.
+export interface Rating {
+  dishId: number;
+  recipeId: number | null;
+  weekId: string;
+  dishName: string;
+  member: string;
+  stars: number;
+  comment: string | null;
+  at: string;
+}
+
+// How the household has rated a recipe over the weeks.
+export interface RecipeRating {
+  recipeId: number;
+  name: string;
+  average: number;
+  count: number;
+  comments: string[];
+  last: string;
 }
 
 // Where an item comes from. A request is something a member asked for and
@@ -311,6 +338,15 @@ export class Store {
         text TEXT NOT NULL,
         posted INTEGER NOT NULL DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS ratings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dish_id INTEGER NOT NULL REFERENCES dishes (id),
+        member TEXT NOT NULL,
+        stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5),
+        comment TEXT,
+        at TEXT NOT NULL,
+        UNIQUE (dish_id, member)
+      );
       CREATE TABLE IF NOT EXISTS kv (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -319,6 +355,8 @@ export class Store {
     // Columns added after a table was first created.
     const has = (table: string, column: string) => this.#db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
     if (!has("products", "category")) this.#db.exec(`ALTER TABLE products ADD COLUMN category TEXT`);
+    if (!has("dishes", "origin")) this.#db.exec(`ALTER TABLE dishes ADD COLUMN origin TEXT`);
+    if (!has("dishes", "picked_by")) this.#db.exec(`ALTER TABLE dishes ADD COLUMN picked_by TEXT`);
   }
 
   close(): void {
@@ -675,11 +713,11 @@ export class Store {
     return r ? toDish(r) : null;
   }
 
-  addDish(weekId: string, dish: { name: string; portions: number; why?: string; recipeId?: number | null }, by: string): Dish {
+  addDish(weekId: string, dish: { name: string; portions: number; why?: string; recipeId?: number | null; origin?: string | null }, by: string): Dish {
     return this.transaction(() => {
       const row = this.#db
-        .prepare(`INSERT INTO dishes (week_id, recipe_id, name, portions, why, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`)
-        .get(weekId, dish.recipeId ?? null, dish.name, dish.portions, dish.why ?? "", by, now());
+        .prepare(`INSERT INTO dishes (week_id, recipe_id, name, portions, why, origin, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`)
+        .get(weekId, dish.recipeId ?? null, dish.name, dish.portions, dish.why ?? "", dish.origin || null, by, now());
       this.changed(weekId, by, `added the dish ${dish.name}`);
       return toDish(row);
     });
@@ -698,6 +736,63 @@ export class Store {
       this.changed(d.weekId, by, `removed the dish ${d.name} and its ingredients`);
     });
     return d;
+  }
+
+  // Marks a dish as picked to cook this week, or not. False when nothing
+  // changed.
+  pickDish(id: number, picked: boolean, by: string): boolean {
+    return this.transaction(() => {
+      const d = this.dish(id);
+      if (!d || d.removedAt || (d.pickedBy !== null) === picked) return false;
+      this.#db.prepare(`UPDATE dishes SET picked_by = ? WHERE id = ?`).run(picked ? by : null, id);
+      this.changed(d.weekId, by, `${picked ? "picked" : "unpicked"} the dish ${d.name}`);
+      return true;
+    });
+  }
+
+  // Ratings
+
+  // Records a member's rating of a dish, replacing their earlier one.
+  rateDish(dishId: number, member: string, stars: number, comment?: string | null): Rating {
+    if (!Number.isInteger(stars) || stars < 1 || stars > 5) throw new Error("A rating is a whole number from 1 to 5");
+    if (!this.dish(dishId)) throw new Error(`No dish ${dishId}`);
+    this.#db
+      .prepare(
+        `INSERT INTO ratings (dish_id, member, stars, comment, at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (dish_id, member) DO UPDATE SET stars = excluded.stars, comment = COALESCE(excluded.comment, ratings.comment), at = excluded.at`,
+      )
+      .run(dishId, member, stars, comment?.trim() || null, now());
+    return this.dishRatings(dishId).find((r) => r.member === member)!;
+  }
+
+  dishRatings(dishId: number): Rating[] {
+    return this.#db
+      .prepare(`SELECT r.*, d.recipe_id, d.week_id, d.name AS dish_name FROM ratings r JOIN dishes d ON d.id = r.dish_id WHERE r.dish_id = ? ORDER BY r.at`)
+      .all(dishId)
+      .map(toRating);
+  }
+
+  // Every recipe the household has rated, best first.
+  recipeRatings(): RecipeRating[] {
+    const rows = this.#db
+      .prepare(
+        `SELECT r.*, d.recipe_id, d.week_id, d.name AS dish_name FROM ratings r JOIN dishes d ON d.id = r.dish_id
+         WHERE d.recipe_id IS NOT NULL ORDER BY r.at DESC, r.id DESC`,
+      )
+      .all()
+      .map(toRating);
+    const by = new Map<number, Rating[]>();
+    for (const r of rows) by.set(r.recipeId!, [...(by.get(r.recipeId!) ?? []), r]);
+    return [...by]
+      .map(([recipeId, list]) => ({
+        recipeId,
+        name: list[0]!.dishName,
+        average: Math.round((list.reduce((a, r) => a + r.stars, 0) / list.length) * 10) / 10,
+        count: list.length,
+        comments: list.map((r) => r.comment).filter((c): c is string => !!c).slice(0, 4),
+        last: list[0]!.at,
+      }))
+      .sort((a, b) => b.average - a.average || b.count - a.count);
   }
 
   // Items
@@ -990,8 +1085,23 @@ function toDish(r: Record<string, unknown> | undefined): Dish {
     name: String(r.name),
     portions: Number(r.portions),
     why: String(r.why),
+    origin: (r.origin as string | null) ?? null,
+    pickedBy: (r.picked_by as string | null) ?? null,
     addedBy: String(r.added_by),
     removedAt: (r.removed_at as string | null) ?? null,
+  };
+}
+
+function toRating(r: Record<string, unknown>): Rating {
+  return {
+    dishId: Number(r.dish_id),
+    recipeId: r.recipe_id === null ? null : Number(r.recipe_id),
+    weekId: String(r.week_id),
+    dishName: String(r.dish_name),
+    member: String(r.member),
+    stars: Number(r.stars),
+    comment: (r.comment as string | null) ?? null,
+    at: String(r.at),
   };
 }
 

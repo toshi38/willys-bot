@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { runClaude } from "../core/claude.ts";
 import type { Context } from "../core/context.ts";
+import { picksDishes, suggestionCount } from "../core/household.ts";
 import { needsCategory, productFacts, ruleProblems } from "../core/rules.ts";
 import type { ListItem, WeekItem } from "../core/store.ts";
 
@@ -22,6 +23,7 @@ const DraftOutput = z.object({
       name: z.string(),
       portions: z.number().int().min(1),
       why: z.string().default(""),
+      origin: z.string().default(""),
       recipeId: z.number().int().default(0),
       recipe: z.object({ servings: z.number().int().default(0), ingredients: z.array(z.string()).default([]), method: z.string().default("") }).default({ servings: 0, ingredients: [], method: "" }),
     }),
@@ -53,6 +55,7 @@ const DRAFT_SCHEMA = {
           name: { type: "string" },
           portions: { type: "integer", minimum: 1 },
           why: { type: "string", description: "Why this dish this week: offers used, flavour, protein" },
+          origin: { type: "string", description: "For the wildcard dish only: the country it comes from. Empty for every other dish." },
           recipeId: { type: "integer", description: "Id of a known recipe this dish reuses, or 0 for a new one" },
           recipe: {
             type: "object",
@@ -64,7 +67,7 @@ const DRAFT_SCHEMA = {
             required: ["servings", "ingredients", "method"],
           },
         },
-        required: ["name", "portions", "why", "recipeId", "recipe"],
+        required: ["name", "portions", "why", "origin", "recipeId", "recipe"],
       },
     },
     lines: {
@@ -108,6 +111,8 @@ Work like a careful, thrifty person who knows this household:
 - Keep near the budget when one is given; say in notes if you go over and why.
 - Every dish needs a short recipe (ingredients with amounts for its portions, and a method of a few steps) and the products to cook it. Link each line to the dish it is for; lines for no dish (list items, restocks, everyday basics) use dish 0.
 - Vary the menu from recent weeks. Reuse a known recipe by its id when it suits the week, and keep its name.
+- Learn from the household's ratings (1 to 5 stars, with comments): bring back recipes rated 4 or more now and then, never suggest one rated 2 or less again, and take the comments into account for new dishes.
+- When the household picks some of your suggestions, make them a real choice: different proteins, cuisines and effort, each dish with its own products so any of them can be ordered without the others.
 - Items already in this week's shop are fixed: do not add them again and do not plan around removing them.
 - Only answer once the plan is complete. Never return a draft, a placeholder or an invented product code.
 - The household's brand and gluten rules are checked in code after you answer. search_products marks products of an avoided brand and products that look like they contain gluten. Avoid both. If you must buy one, start that line's reason with "Brand exception:" (every other brand costs more than double) or "Gluten checked:" (you know it is gluten free) and say why; otherwise the plan is rejected.
@@ -117,24 +122,45 @@ export interface DraftInput {
   // Items already in the week, kept as they are (a redraft keeps requests
   // and the ingredients of dishes members added).
   fixed: WeekItem[];
-  // Dishes a member added, which a redraft keeps.
+  // Dishes a redraft keeps: those a member added or picked.
   keptDishes: string[];
+  // True when a kept dish is already the week's wildcard.
+  keptWildcard?: boolean;
   // What the household asked for when asking for a new draft.
   instructions: string | null;
   // Dishes the household wants a redraft to move away from.
   replacing: string[];
 }
 
+// How many dishes a draft plans: the week's suggestions less the dishes it
+// keeps.
+export function dishesWanted(ctx: Context, input: DraftInput): number {
+  return Math.max(0, suggestionCount(ctx.household) - input.keptDishes.length);
+}
+
+// Whether the draft must include the week's wildcard dish.
+export function wildcardWanted(ctx: Context, input: DraftInput): boolean {
+  return ctx.household.config.plan.wildcard && !input.keptWildcard && dishesWanted(ctx, input) >= 2;
+}
+
 export function buildPrompt(ctx: Context, weekId: string, input: DraftInput): string {
   const { household, store } = ctx;
   const c = household.config;
+  const want = dishesWanted(ctx, input);
+  const count = picksDishes(household)
+    ? `Suggest ${want} dishes of about ${c.plan.portionsPerMeal} portions each. The household picks about ${c.plan.meals} of the week's suggestions to cook, and only the picked dishes are bought.`
+    : `Plan ${want} dishes of about ${c.plan.portionsPerMeal} portions each.`;
+  const wildcard = wildcardWanted(ctx, input)
+    ? ` Make exactly one of them a wildcard: home cooking from another country that the household has probably never heard of, not a well known dish like pizza, tacos, pad thai or butter chicken. Set its origin to the country, say in why what makes it special, keep it doable with ingredients from Willys, and follow the dietary rules as for any dish.`
+    : "";
+  const ratings = store.recipeRatings();
   const list = openRequests(ctx, input.fixed);
   const pantry = store.pantryItems();
   const offers = store.currentOffers(undefined, 400);
   const past = store.pastDishes(weekId, 24);
   const recipes = store.recipes().slice(0, 60);
   const lines = [
-    `Household: ${c.name}. ${c.plan.people} people. Plan ${Math.max(0, c.plan.meals - input.keptDishes.length)} dishes of about ${c.plan.portionsPerMeal} portions each.${c.plan.budgetSek ? ` Budget about ${c.plan.budgetSek} kr.` : ""} Language: ${c.plan.language === "sv" ? "Swedish" : "English"}.`,
+    `Household: ${c.name}. ${c.plan.people} people. ${count}${wildcard}${c.plan.budgetSek ? ` Budget about ${c.plan.budgetSek} kr${picksDishes(household) ? ` for the basics and ${c.plan.meals} dishes` : ""}.` : ""} Language: ${c.plan.language === "sv" ? "Swedish" : "English"}.`,
     `Today is ${new Date().toISOString().slice(0, 10)}. This shop is picked up on ${weekId}.`,
     "",
     "## Preferences",
@@ -158,6 +184,11 @@ export function buildPrompt(ctx: Context, weekId: string, input: DraftInput): st
     "",
     "## Known recipes (id: name)",
     recipes.length ? recipes.map((r) => `- ${r.id}: ${r.name}`).join("\n") : "(none yet)",
+    "",
+    "## How the household rated dishes they cooked (best first)",
+    ratings.length
+      ? ratings.map((r) => `- ${r.name} (recipe ${r.recipeId}): ${r.average} of 5 from ${r.count} rating${r.count === 1 ? "" : "s"}${r.comments.length ? `: ${r.comments.map((c) => `"${c}"`).join("; ")}` : ""}`).join("\n")
+      : "(no ratings yet)",
     "",
     "## This week's online offers at the store (code, name, size, offer price, regular price, label)",
     offers.length
@@ -203,9 +234,12 @@ export async function makeDraft(ctx: Context, weekId: string, input: DraftInput)
 // or half-finished plan from reaching the household.
 export function checkDraft(ctx: Context, d: Draft, input: DraftInput): string[] {
   const problems: string[] = [];
-  const want = Math.max(0, ctx.household.config.plan.meals - input.keptDishes.length);
+  const want = dishesWanted(ctx, input);
   if (/^\s*(draft|placeholder|todo|tbd)?\s*$/i.test(d.summary) || d.summary.trim().length < 20) problems.push("The summary is missing or a placeholder.");
   if (want > 0 && d.dishes.length !== want) problems.push(`Plan exactly ${want} dishes, not ${d.dishes.length}.`);
+  const wildcards = d.dishes.filter((dish) => dish.origin.trim());
+  if (wildcardWanted(ctx, input) && wildcards.length !== 1) problems.push(`Make exactly one dish the wildcard, with its country in origin, not ${wildcards.length}.`);
+  if (!wildcardWanted(ctx, input) && wildcards.length) problems.push("No wildcard is wanted: leave origin empty for every dish.");
   d.dishes.forEach((dish, i) => {
     if (!d.lines.some((l) => l.dish === i + 1)) problems.push(`Dish ${i + 1} (${dish.name}) has no products.`);
     const known = dish.recipeId > 0 && ctx.store.recipe(dish.recipeId);
@@ -223,8 +257,20 @@ export function checkDraft(ctx: Context, d: Draft, input: DraftInput): string[] 
   }
   const budget = ctx.household.config.plan.budgetSek;
   if (budget) {
-    const total = [...d.lines.map((l) => l.qty * (ctx.store.latestPrice(l.productCode) ?? 0)), ...input.fixed.map((i) => i.qty * (i.unitPrice ?? 0))].reduce((a, b) => a + b, 0);
-    if (total > budget * 1.15) problems.push(`The shop comes to about ${Math.round(total)} kr, well over the ${budget} kr budget: use cheaper products or offers, or smaller quantities.`);
+    // With picking, the budget covers the basics and as many dishes as the
+    // household cooks, so the dishes count at their average cost.
+    const cost = (l: Draft["lines"][number]) => l.qty * (ctx.store.latestPrice(l.productCode) ?? 0);
+    const basics = [...d.lines.filter((l) => l.dish === 0).map(cost), ...input.fixed.map((i) => i.qty * (i.unitPrice ?? 0))].reduce((a, b) => a + b, 0);
+    const dishes = d.lines.filter((l) => l.dish > 0).map(cost).reduce((a, b) => a + b, 0);
+    const cooked = picksDishes(ctx.household) && d.dishes.length ? (dishes / d.dishes.length) * Math.min(ctx.household.config.plan.meals, d.dishes.length) : dishes;
+    const total = basics + cooked;
+    if (total > budget * 1.15) {
+      problems.push(
+        picksDishes(ctx.household)
+          ? `The basics and ${ctx.household.config.plan.meals} average dishes come to about ${Math.round(total)} kr, well over the ${budget} kr budget: use cheaper products or offers, or smaller quantities.`
+          : `The shop comes to about ${Math.round(total)} kr, well over the ${budget} kr budget: use cheaper products or offers, or smaller quantities.`,
+      );
+    }
   }
   const covered = new Set([...d.lines.flatMap((l) => l.listItemIds), ...d.skipped.map((s) => s.listItemId)]);
   for (const i of openRequests(ctx, input.fixed)) if (!covered.has(i.id)) problems.push(`List item #${i.id} (${i.text}) is neither bought nor skipped.`);
@@ -243,7 +289,7 @@ export function writeDraft(ctx: Context, weekId: string, d: Draft): void {
       const recipe =
         reused ??
         store.saveRecipe({ name: dish.name, servings: dish.recipe.servings || dish.portions, ingredients: dish.recipe.ingredients.join("\n"), method: dish.recipe.method }, "planner");
-      return store.addDish(weekId, { name: dish.name, portions: dish.portions, why: dish.why, recipeId: recipe.id }, "planner").id;
+      return store.addDish(weekId, { name: dish.name, portions: dish.portions, why: dish.why, recipeId: recipe.id, origin: dish.origin.trim() || null }, "planner").id;
     });
     for (const l of d.lines) {
       const listItem = l.listItemIds.map((id) => list.get(id)).find((i) => i !== undefined);

@@ -62,7 +62,7 @@ async function runOne(name: string, n: number): Promise<Result> {
         { name: "Stephen", email: "stephen@test.example" },
       ],
       mail: { address: "food@test.example", name: "food-bot", secret: "eval-resend" },
-      plan: { meals: 3, portionsPerMeal: 6, people: 2, budgetSek: 1200, language: "en" },
+      plan: { meals: 3, portionsPerMeal: 6, people: 2, budgetSek: 1200, language: "en", ...SCENARIOS.find((s) => s.name === name)?.plan },
       rules: { avoidBrands: ["Garant"], avoid: [{ brand: "Eldorado", category: "spices", strict: true }], glutenFree: true, staples: [] },
     }),
   );

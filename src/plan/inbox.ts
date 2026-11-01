@@ -16,6 +16,8 @@ import {
   senderAuthenticated,
   type ReceivedEmail,
 } from "../notify/email.ts";
+import { describePicks, parsePicks, picking, pickProblem, setPicks } from "./picks.ts";
+import { sendSurvey } from "./survey.ts";
 import { editable, localDate, postChanges, tellHousehold, toSlack } from "./week.ts";
 import { afterChange, announceChanges, decide, expireWeeks, orderState, planWeek, redraftWeek, renderWeek, type OrderState } from "./weekly.ts";
 
@@ -48,6 +50,11 @@ export async function handleInbox(ctx: Context, opts: { dryRun?: boolean } = {})
     // Catch the Slack post up on changes it missed (the gateway was down).
     const open = store.openWeek();
     if (open) await toSlack(() => announceChanges(ctx, open.id));
+  }
+  // The day before pickup: how was the food from the last one?
+  if (!opts.dryRun) {
+    const asked = await sendSurvey(ctx).catch((err: unknown) => `Survey failed: ${err instanceof Error ? err.message : err}`);
+    if (asked) console.log(asked);
   }
   const log: string[] = [];
   const received = (await listReceived(household, since)).filter((e) => addressedTo(e, bot)).reverse();
@@ -115,7 +122,25 @@ async function handleEmail(ctx: Context, email: ReceivedEmail, name: string, fro
   };
 
   if (answered?.status === "open") {
+    // "1, 3, 5" picks those dishes; "1, 3, 5 yes" also orders them.
+    const picks = picking(ctx, answered) ? parsePicks(text, store.dishes(answered.id).length) : null;
+    if (picks) {
+      setPicks(ctx, answered, picks.numbers, from);
+      log.push(`${email.id}: ${describePicks(ctx, answered, from)}`);
+      if (picks.order) {
+        await settle("approving", async () => log.push(...(await decide(ctx, store.week(answered.id)!, "approve", from))));
+      } else {
+        await settle("updating", () => announceChanges(ctx, answered.id, { emailIntro: `${describePicks(ctx, answered, from)} Reply **yes** to order them.`, inReplyTo: email.message_id }));
+      }
+      return log;
+    }
     const decision = classifyReply(text);
+    const problem = decision.kind === "approve" ? pickProblem(ctx, answered) : null;
+    if (problem) {
+      await settle("replying", () => tellHousehold(ctx, { subject: reSubject(email.subject), markdown: problem, inReplyTo: email.message_id }));
+      log.push(`${email.id}: approval refused, nothing picked`);
+      return log;
+    }
     if (decision.kind !== "change") {
       // A failed approval tells the household itself (see apply).
       await settle(decision.kind === "approve" ? "approving" : "skipping", async () => log.push(...(await decide(ctx, answered, decision.kind === "approve" ? "approve" : "skip", from))));
@@ -181,6 +206,8 @@ What you can change:
 - Food already bought (past_weeks, recipe_view): after pickup, the week they are cooking from is under Recent weeks, not This week's shop. When they ask for the recipes, what to cook, or what they ordered, answer from there: past_weeks with the pickup date gives each dish's full recipe. Asking about recipes is never a reason to plan or order new food.
 - A whole new set of dishes, or a plan when no week exists: only then, put instructions for the planner in redraft. Requests are kept.
 - Approving or skipping the week is done by replying yes or no to the plan email, or with the Approve and Skip buttons in Slack; if they seem to want that, tell them so.
+- Picking dishes (dish_pick): when the week has more suggestions than the household cooks, they pick the ones they want and only picked dishes are ordered. "Let's do the chili and the curry" picks those two; leave the others as they are unless they say otherwise. Ordering is still their yes or the Order picked button.
+- Ratings (dish_rate): when someone says how a dish they cooked was ("the curry was amazing", "2: 3, too dry"), rate that dish from Recent weeks or this week: their stars from 1 to 5 and their words as the comment. Without a number, turn their words into stars (loved it 5, good 4, fine 3, not great 2, awful 1) and say in your reply what you recorded. Numbers in a reply to the "How was the food" email are the dishes' numbers in that email, which follow the order in Recent weeks.
 
 Rules:
 - Only act on what the message asks. If something is ambiguous, do the safe part and ask about the rest in your reply.
@@ -233,7 +260,7 @@ export async function runIntake(ctx: Context, input: IntakeInput): Promise<z.inf
     schema: INTAKE_SCHEMA,
     week: input.week?.id,
     tools: [
-      "week_view", "week_add_item", "week_set_quantity", "week_remove_item", "dish_add", "dish_remove", "recipe_view", "past_weeks",
+      "week_view", "week_add_item", "week_set_quantity", "week_remove_item", "dish_add", "dish_remove", "dish_pick", "dish_rate", "recipe_view", "past_weeks",
       "list_view", "list_add", "list_update", "list_remove",
       "pantry_view", "pantry_set", "pantry_remove",
       "preferences_view", "preferences_update",
@@ -254,8 +281,11 @@ export function renderRecentWeeks(ctx: Context, exceptWeek?: string, limit = 3):
     .filter((w) => w.id !== exceptWeek)
     .slice(0, limit)
     .map((w) => {
-      const dishes = ctx.store.dishes(w.id).map((d) => `${d.name}${d.recipeId ? ` (recipe ${d.recipeId})` : ""}`);
-      return `- Pickup ${w.id}: ${dishes.length ? dishes.join(", ") : "no dishes"}`;
+      const dishes = ctx.store.dishes(w.id).map((d, i) => {
+        const ratings = ctx.store.dishRatings(d.id).map((r) => `${r.member} ${r.stars}/5`);
+        return `${i + 1}. ${d.name} (dish ${d.id}${d.recipeId ? `, recipe ${d.recipeId}` : ""}${ratings.length ? `, rated ${ratings.join(", ")}` : ""})`;
+      });
+      return `- Pickup ${w.id}: ${dishes.length ? dishes.join("; ") : "no dishes"}`;
     })
     .join("\n");
 }

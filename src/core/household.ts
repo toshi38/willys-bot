@@ -85,6 +85,13 @@ export const HouseholdConfig = z.object({
     // Batch-cooked dishes per week and portions of each; a household that
     // cooks every night uses one portion count per dinner instead.
     meals: z.number().int().min(0).max(14),
+    // Dishes the planner suggests each week. With more suggestions than
+    // meals, the household picks the ones to cook and only those are
+    // ordered; otherwise every dish is ordered.
+    suggestions: z.number().int().min(0).max(14).optional(),
+    // One suggestion a week is a dish from another country's home cooking
+    // the household probably does not know.
+    wildcard: z.boolean().default(false),
     portionsPerMeal: z.number().int().min(1).default(4),
     people: z.number().int().min(1),
     // Soft weekly budget the planner aims for, in SEK.
@@ -139,4 +146,15 @@ export function isMember(household: Household, email: string): boolean {
 export function memberByLogin(household: Household, login: string): HouseholdConfig["members"][number] | null {
   const l = login.trim().toLowerCase();
   return household.config.members.find((m) => m.email.toLowerCase() === l || m.tailscale.some((t) => t.toLowerCase() === l)) ?? null;
+}
+
+// How many dishes the planner suggests each week.
+export function suggestionCount(household: Household): number {
+  return Math.max(household.config.plan.suggestions ?? 0, household.config.plan.meals);
+}
+
+// True when the household picks some of the suggested dishes each week,
+// rather than ordering all of them.
+export function picksDishes(household: Household): boolean {
+  return suggestionCount(household) > household.config.plan.meals;
 }

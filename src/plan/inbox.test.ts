@@ -86,8 +86,8 @@ test("the intake prompt lists the weeks already ordered, without the week the me
     if (status !== "open") store.switchWeek(id, "open", status);
   }
   const ctx = { store, household } as unknown as Context;
-  assert.equal(renderRecentWeeks(ctx, "2026-11-06"), "- Pickup 2026-10-30: Dish 2026-10-30 (recipe 2)\n- Pickup 2026-10-23: Dish 2026-10-23 (recipe 1)");
-  assert.equal(renderRecentWeeks(ctx, "2026-10-30"), "- Pickup 2026-10-23: Dish 2026-10-23 (recipe 1)");
+  assert.equal(renderRecentWeeks(ctx, "2026-11-06"), "- Pickup 2026-10-30: 1. Dish 2026-10-30 (dish 2, recipe 2)\n- Pickup 2026-10-23: 1. Dish 2026-10-23 (dish 1, recipe 1)");
+  assert.equal(renderRecentWeeks(ctx, "2026-10-30"), "- Pickup 2026-10-23: 1. Dish 2026-10-23 (dish 1, recipe 1)");
 });
 
 test("an empty redraft answer in any disguise does not start a redraft", () => {
