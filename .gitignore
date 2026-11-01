@@ -9,3 +9,6 @@ households/*
 
 # Eval runs: per-run details, kept locally.
 eval/results/
+
+# The recipe site as built by `npm run site`.
+dist/

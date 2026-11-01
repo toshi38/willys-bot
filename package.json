@@ -11,7 +11,8 @@
     "wb": "node --no-warnings=ExperimentalWarning src/cli.ts",
     "mcp": "node --no-warnings=ExperimentalWarning src/mcp/server.ts",
     "web": "node --no-warnings=ExperimentalWarning src/web/server.ts",
-    "eval": "node --no-warnings=ExperimentalWarning eval/run.ts"
+    "eval": "node --no-warnings=ExperimentalWarning eval/run.ts",
+    "site": "node --no-warnings=ExperimentalWarning src/recipes/build.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
