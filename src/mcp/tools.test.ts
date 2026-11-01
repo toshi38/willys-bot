@@ -5,7 +5,13 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { Context } from "../core/context.ts";
 import type { Household } from "../core/household.ts";
 import { Store } from "../core/store.ts";
+import { localDate } from "../plan/week.ts";
 import { buildServer } from "./tools.ts";
+
+// Weeks relative to today, so the tests do not expire.
+const day = (offset: number) => localDate(new Date(Date.now() + offset * 86_400_000));
+const NEXT = day(3);
+const PAST = day(-4);
 
 const household = { id: "test", dir: "/nonexistent", preferences: "", config: { name: "Test", members: [{ name: "Carin", email: "carin@lau.engineering", tailscale: [] }] } } as unknown as Household;
 
@@ -30,34 +36,34 @@ function weekWithDish(store: Store, id: string) {
 
 test("an item added without a dish is a request from the person talking", async () => {
   const store = new Store(":memory:");
-  weekWithDish(store, "2026-10-30");
+  weekWithDish(store, NEXT);
   const call = await connect(store);
   const res = await call("week_add_item", { productCode: "SKYR_ST", qty: 2, reason: "for breakfast" });
   assert.equal(res.error, false);
-  const [item] = store.items("2026-10-30");
+  const [item] = store.items(NEXT);
   assert.deepEqual([item.source, item.requestedBy, item.qty], ["request", "Carin", 2]);
 });
 
 test("the tools refuse unknown products, removed dishes and pantry names that do not exist", async () => {
   const store = new Store(":memory:");
-  const dish = weekWithDish(store, "2026-10-30");
+  const dish = weekWithDish(store, NEXT);
   const call = await connect(store);
   assert.match((await call("week_add_item", { productCode: "NOPE_ST", qty: 1, reason: "x" })).text, /Unknown product/);
   assert.match((await call("week_add_item", { productCode: "SKYR_ST", qty: 1, reason: "x", restocks: "skyr" })).text, /No pantry entry/);
   store.removeDish(dish.id, "Carin");
   assert.match((await call("week_add_item", { productCode: "SKYR_ST", qty: 1, reason: "x", dishId: dish.id })).text, /not in this week/);
-  assert.equal(store.items("2026-10-30").length, 0);
+  assert.equal(store.items(NEXT).length, 0);
 });
 
 test("pinned to a closed week, the tools change nothing, even with another week open", async () => {
   const store = new Store(":memory:");
-  weekWithDish(store, "2026-10-23");
-  store.switchWeek("2026-10-23", "open", "applied");
-  weekWithDish(store, "2026-10-30");
-  const call = await connect(store, "2026-10-23");
+  weekWithDish(store, PAST);
+  store.switchWeek(PAST, "open", "applied");
+  weekWithDish(store, NEXT);
+  const call = await connect(store, PAST);
   const res = await call("week_add_item", { productCode: "SKYR_ST", qty: 1, reason: "x" });
-  assert.match(res.text, /2026-10-23 is applied/);
-  assert.equal(store.items("2026-10-30").length, 0);
+  assert.match(res.text, new RegExp(`${PAST} is applied`));
+  assert.equal(store.items(NEXT).length, 0);
 });
 
 test("an approved week can still be changed until its pickup day has passed", async () => {
