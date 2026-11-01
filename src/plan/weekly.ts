@@ -60,7 +60,12 @@ export async function planWeek(ctx: Context, opts: { dryRun?: boolean; instructi
   }
   if (!store.claimWeek(weekId)) return { done: false, message: `Week ${weekId} is being drafted by another run` };
   try {
-    writeDraft(ctx, weekId, await makeDraft(ctx, weekId, input));
+    // Standing orders go in by rule, as requests, before the planner plans
+    // around them.
+    for (const s of household.config.rules?.staples ?? []) {
+      if (store.productName(s.productCode)) store.addItem(weekId, { productCode: s.productCode, qty: s.qty, reason: `Every week: ${s.name}`, source: "request", requestedBy: "standing order" }, "planner");
+    }
+    writeDraft(ctx, weekId, await makeDraft(ctx, weekId, { ...input, fixed: store.items(weekId) }));
   } catch (err) {
     store.dropWeek(weekId);
     throw err;

@@ -15,8 +15,10 @@ const PAST = day(-4);
 
 const household = { id: "test", dir: "/nonexistent", preferences: "", config: { name: "Test", members: [{ name: "Carin", email: "carin@lau.engineering", tailscale: [] }] } } as unknown as Household;
 
-async function connect(store: Store, week?: string) {
-  const server = buildServer({ store, household } as unknown as Context, "Carin", { week });
+const ruled = { ...household, config: { ...household.config, rules: { avoidBrands: ["Garant"], glutenFree: true, staples: [] } } } as unknown as Household;
+
+async function connect(store: Store, week?: string, h: Household = household) {
+  const server = buildServer({ store, household: h } as unknown as Context, "Carin", { week });
   const client = new Client({ name: "test", version: "1" });
   const [a, b] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(a), client.connect(b)]);
@@ -91,4 +93,49 @@ test("past_weeks finds an ordered week after its pickup, with each dish's full r
   const week = JSON.parse((await call("past_weeks", { pickup: PAST })).text) as { dishes: { recipe: { ingredients: string; method: string } }[] };
   assert.deepEqual(week.dishes[0].recipe && [week.dishes[0].recipe.ingredients, week.dishes[0].recipe.method], ["chicken", "cook it"]);
   assert.match((await call("past_weeks", { pickup: "2000-01-07" })).text, /No ordered week/);
+});
+
+test("only one dish can be removed per message; more means a redraft", async () => {
+  const store = new Store(":memory:");
+  const first = weekWithDish(store, NEXT);
+  const second = store.addDish(NEXT, { name: "Chili", portions: 6, recipeId: first.recipeId }, "planner");
+  const call = await connect(store);
+  assert.equal((await call("dish_remove", { dishId: first.id })).error, false);
+  const again = await call("dish_remove", { dishId: second.id });
+  assert.equal(again.error, true);
+  assert.match(again.text, /Only one dish can be removed per message/);
+  assert.deepEqual(store.dishes(NEXT).map((d) => d.name), ["Chili"]);
+});
+
+test("an avoided brand or a gluten risk is refused unless the exception is stated", async () => {
+  const store = new Store(":memory:");
+  weekWithDish(store, NEXT);
+  store.recordProduct({ code: "GARANT_ST", name: "Päron Kvarg 900g", manufacturer: "Garant", priceValue: 29.9 }, "regular");
+  store.recordProduct({ code: "SOY_ST", name: "Japansk Soja 150ml", priceValue: 24.9 }, "regular");
+  const call = await connect(store, undefined, ruled);
+  assert.match((await call("week_add_item", { productCode: "GARANT_ST", qty: 1, reason: "kvarg" })).text, /brand the household avoids/);
+  assert.match((await call("week_add_item", { productCode: "SOY_ST", qty: 1, reason: "stir fry" })).text, /contains gluten/);
+  assert.equal(store.items(NEXT).length, 0);
+  assert.equal((await call("week_add_item", { productCode: "GARANT_ST", qty: 1, reason: "Brand exception: Arla is sold out" })).error, false);
+  assert.equal(store.items(NEXT).length, 1);
+});
+
+test("search shows flagged products last, marked", async () => {
+  const store = new Store(":memory:");
+  const willys = {
+    search: async () => ({
+      results: [
+        { code: "G", name: "Päron Kvarg", manufacturer: "Garant", priceValue: 29.9 },
+        { code: "A", name: "Vanilj Kvarg", manufacturer: "Arla", priceValue: 39.9 },
+      ],
+      pagination: { numberOfPages: 1 },
+    }),
+  };
+  const server = buildServer({ store, household: ruled, willys } as unknown as Context, "Carin");
+  const client = new Client({ name: "test", version: "1" });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(a), client.connect(b)]);
+  const res = (await client.callTool({ name: "search_products", arguments: { query: "kvarg" } })) as { content: { text: string }[] };
+  const products = JSON.parse(res.content[0].text) as { code: string; avoidedBrand?: boolean }[];
+  assert.deepEqual(products.map((p) => [p.code, p.avoidedBrand ?? false]), [["A", false], ["G", true]]);
 });

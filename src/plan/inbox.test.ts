@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { Context } from "../core/context.ts";
 import type { Household } from "../core/household.ts";
 import { Store } from "../core/store.ts";
-import { handleInbox, messageLanguage, renderRecentWeeks } from "./inbox.ts";
+import { handleInbox, messageLanguage, redraftInstructions, renderRecentWeeks } from "./inbox.ts";
 
 const household = {
   id: "test",
@@ -88,4 +88,9 @@ test("the intake prompt lists the weeks already ordered, without the week the me
   const ctx = { store, household } as unknown as Context;
   assert.equal(renderRecentWeeks(ctx, "2026-11-06"), "- Pickup 2026-10-30: Dish 2026-10-30 (recipe 2)\n- Pickup 2026-10-23: Dish 2026-10-23 (recipe 1)");
   assert.equal(renderRecentWeeks(ctx, "2026-10-30"), "- Pickup 2026-10-23: Dish 2026-10-23 (recipe 1)");
+});
+
+test("an empty redraft answer in any disguise does not start a redraft", () => {
+  for (const raw of ["", '""', "''", " none ", "N/A", "null", "Inget."]) assert.equal(redraftInstructions(raw), "", JSON.stringify(raw));
+  assert.equal(redraftInstructions('"Three new dishes, no chicken"'), "Three new dishes, no chicken");
 });

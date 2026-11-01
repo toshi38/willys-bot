@@ -514,6 +514,11 @@ export class Store {
     return r && r.price !== null ? Number(r.price) : null;
   }
 
+  productBrand(code: string): string | null {
+    const r = this.#db.prepare(`SELECT manufacturer FROM products WHERE code = ?`).get(code);
+    return r ? ((r.manufacturer as string | null) ?? null) : null;
+  }
+
   productName(code: string): string | null {
     const r = this.#db.prepare(`SELECT name, volume FROM products WHERE code = ?`).get(code);
     if (!r) return null;

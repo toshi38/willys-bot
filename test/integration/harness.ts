@@ -200,7 +200,7 @@ export interface Env {
   stop: () => void;
 }
 
-export async function setup(opts: { slack?: boolean; meals?: number } = {}): Promise<Env> {
+export async function setup(opts: { slack?: boolean; meals?: number; rules?: object } = {}): Promise<Env> {
   const dir = mkdtempSync(join(tmpdir(), "wb-it-"));
   const households = join(dir, "households");
   const data = join(dir, "data");
@@ -218,6 +218,7 @@ export async function setup(opts: { slack?: boolean; meals?: number } = {}): Pro
       ],
       mail: { address: "food@test.example", name: "food-bot", secret: "test-resend" },
       ...(opts.slack === false ? {} : { slack: { bot: "food" } }),
+      ...(opts.rules ? { rules: opts.rules } : {}),
       plan: { meals: opts.meals ?? 2, portionsPerMeal: 6, people: 2, language: "en" },
     }),
   );

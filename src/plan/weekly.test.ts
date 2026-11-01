@@ -250,3 +250,21 @@ test("the current week is the nearest one not yet picked up, approved weeks incl
   assert.equal(store.currentWeek("2026-10-30")?.id, WEEK);
   assert.equal(store.currentWeek("2026-10-31"), null);
 });
+
+test("a draft breaking the household's brand or gluten rules, or far over budget, is rejected", () => {
+  const { store, ctx } = setup();
+  const ruled = { ...ctx, household: { ...household, config: { ...household.config, rules: { avoidBrands: ["Garant"], glutenFree: true, staples: [] }, plan: { ...household.config.plan, budgetSek: 300 } } } } as unknown as Context;
+  store.recordProduct({ code: "GARANT_ST", name: "Krossade tomater", manufacturer: "Garant", priceValue: 9.9 }, "regular");
+  store.recordProduct({ code: "PASTA_ST", name: "Spaghetti 1kg", priceValue: 19.9 }, "regular");
+  const d = goodDraft(0);
+  d.lines = d.lines.filter((l) => l.listItemIds.length === 0);
+  d.lines.push({ productCode: "GARANT_ST", qty: 2, reason: "Tomatoes", dish: 2, listItemIds: [], restocks: "" });
+  d.lines.push({ productCode: "PASTA_ST", qty: 1, reason: "Pasta", dish: 1, listItemIds: [], restocks: "" });
+  const problems = checkDraft(ruled, d, noFixed).join("\n");
+  assert.match(problems, /Garant, a brand the household avoids/);
+  assert.match(problems, /Spaghetti 1kg .* contains gluten/);
+  assert.match(problems, /well over the 300 kr budget/);
+  d.lines.at(-2)!.reason = "Brand exception: every other tomato costs more than double";
+  d.lines.at(-1)!.reason = "Gluten checked: corn and rice spaghetti";
+  assert.doesNotMatch(checkDraft(ruled, d, noFixed).join("\n"), /avoids|gluten/);
+});

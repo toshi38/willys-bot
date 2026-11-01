@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { runClaude } from "../core/claude.ts";
 import type { Context } from "../core/context.ts";
+import { ruleProblems } from "../core/rules.ts";
 import type { ListItem, WeekItem } from "../core/store.ts";
 
 // The week's first draft, made by headless Claude Code (`claude -p`) on the
@@ -109,6 +110,7 @@ Work like a careful, thrifty person who knows this household:
 - Vary the menu from recent weeks. Reuse a known recipe by its id when it suits the week, and keep its name.
 - Items already in this week's shop are fixed: do not add them again and do not plan around removing them.
 - Only answer once the plan is complete. Never return a draft, a placeholder or an invented product code.
+- The household's brand and gluten rules are checked in code after you answer. search_products marks products of an avoided brand and products that look like they contain gluten. Avoid both. If you must buy one, start that line's reason with "Brand exception:" (every other brand costs more than double) or "Gluten checked:" (you know it is gluten free) and say why; otherwise the plan is rejected.
 Write the summary, reasons and notes in the household's language. Never use em dashes or en dashes; use commas, colons or full stops.`;
 
 export interface DraftInput {
@@ -208,8 +210,15 @@ export function checkDraft(ctx: Context, d: Draft, input: DraftInput): string[] 
     if (!known && (!dish.recipe.ingredients.length || dish.recipe.method.trim().length < 20)) problems.push(`Dish ${i + 1} (${dish.name}) needs a recipe.`);
   });
   for (const l of d.lines) {
-    if (!ctx.store.productName(l.productCode) || ctx.store.latestPrice(l.productCode) === null) problems.push(`Product ${l.productCode} is unknown: use a code from search_products or the offers.`);
+    const name = ctx.store.productName(l.productCode);
+    if (!name || ctx.store.latestPrice(l.productCode) === null) problems.push(`Product ${l.productCode} is unknown: use a code from search_products or the offers.`);
+    else problems.push(...ruleProblems(ctx.household, { code: l.productCode, name, brand: ctx.store.productBrand(l.productCode) }, l.reason));
     if (l.dish < 0 || l.dish > d.dishes.length) problems.push(`Line ${l.productCode} points at dish ${l.dish}, which does not exist.`);
+  }
+  const budget = ctx.household.config.plan.budgetSek;
+  if (budget) {
+    const total = [...d.lines.map((l) => l.qty * (ctx.store.latestPrice(l.productCode) ?? 0)), ...input.fixed.map((i) => i.qty * (i.unitPrice ?? 0))].reduce((a, b) => a + b, 0);
+    if (total > budget * 1.15) problems.push(`The shop comes to about ${Math.round(total)} kr, well over the ${budget} kr budget: use cheaper products or offers, or smaller quantities.`);
   }
   const covered = new Set([...d.lines.flatMap((l) => l.listItemIds), ...d.skipped.map((s) => s.listItemId)]);
   for (const i of openRequests(ctx, input.fixed)) if (!covered.has(i.id)) problems.push(`List item #${i.id} (${i.text}) is neither bought nor skipped.`);

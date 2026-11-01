@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Context } from "../core/context.ts";
 import { judgePrice, recordSearchResults } from "../core/prices.ts";
 import { savePreferences } from "../core/household.ts";
+import { avoidedBrand, glutenRisk, ruleProblems } from "../core/rules.ts";
 import { editable, localDate } from "../plan/week.ts";
 import type { PantryStatus, Store, Week, WeekStatus } from "../core/store.ts";
 
@@ -130,6 +131,8 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
     if (!editable(w)) throw new Error(`The week for pickup ${w.id} is ${w.status}, so it cannot be changed.`);
     return w;
   };
+  // One server serves one message (see core/claude.ts).
+  let dishesRemoved = 0;
   const weekView = () => {
     const w = openWeek();
     return {
@@ -156,7 +159,7 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
     "week_add_item",
     {
       description:
-        "Add a product to this week's shop. Without dishId it is a request from the person you are talking to, and stays until a member removes it. With dishId it is an ingredient of that dish. Find the productCode with search_products first.",
+        "Add a product to this week's shop. Without dishId it is a request from the person you are talking to, and stays until a member removes it. With dishId it is an ingredient of that dish. Find the productCode with search_products first. Products of an avoided brand, or that look like they contain gluten, are refused unless the reason starts with \"Brand exception:\" or \"Gluten checked:\" and says why.",
       inputSchema: {
         productCode: z.string(),
         qty: z.number().int().min(1).max(50),
@@ -171,6 +174,8 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
       const dish = dishId !== undefined ? store.dish(dishId) : null;
       if (dishId !== undefined && (dish?.weekId !== w.id || dish.removedAt)) throw new Error(`Dish ${dishId} is not in this week`);
       if (restocks && !store.pantryItems().some((p) => p.name === restocks)) throw new Error(`No pantry entry named "${restocks}": use the exact name from pantry_view`);
+      const problems = ruleProblems(household, { code: productCode, name: store.productName(productCode)!, brand: store.productBrand(productCode) }, reason);
+      if (problems.length) throw new Error(problems.join(" "));
       const item = store.addItem(
         w.id,
         { productCode, qty, reason, source: dishId !== undefined ? "dish" : "request", requestedBy: dishId !== undefined ? null : member, dishId: dishId ?? null, restocks: restocks ?? null },
@@ -233,13 +238,17 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
   if (!readOnly) server.registerTool(
     "dish_remove",
     {
-      description: "Remove a dish from this week's shop, with the ingredients bought for it. Requests stay.",
+      description: "Remove a dish from this week's shop, with the ingredients bought for it. Requests stay. One dish per message: for several or all new dishes, ask for a redraft instead.",
       inputSchema: { dishId: z.number().int() },
     },
     async ({ dishId }) => {
       const w = openWeek();
       if (store.dish(dishId)?.weekId !== w.id) throw new Error(`Dish ${dishId} is not in this week`);
+      // Removing several dishes by hand loses the planner's checks; a
+      // redraft keeps them.
+      if (dishesRemoved >= 1) throw new Error("Only one dish can be removed per message. For several or all new dishes, put instructions in redraft instead, and do not remove any more dishes.");
       store.removeDish(dishId, member);
+      dishesRemoved++;
       return text(weekView());
     },
   );
@@ -318,11 +327,16 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
     async ({ query, limit }) => {
       const res = await willys.search(query, 0, limit);
       recordSearchResults(store, res.results);
+      // Products the household's rules flag come last, marked, so the model
+      // sees the alternatives first.
+      const flagged = (p: (typeof res.results)[number]) => ruleProblems(household, { code: p.code, name: p.name, brand: p.manufacturer });
       return text(
-        res.results.map((p) => ({
+        [...res.results].sort((a, b) => Number(flagged(a).length > 0) - Number(flagged(b).length > 0)).map((p) => ({
           code: p.code,
           name: p.name,
           brand: p.manufacturer,
+          ...(avoidedBrand(household, { name: p.name, brand: p.manufacturer }) ? { avoidedBrand: true } : {}),
+          ...(glutenRisk(household, p.name) ? { mayContainGluten: true } : {}),
           size: p.displayVolume,
           price: p.priceValue,
           comparePrice: p.comparePrice ? `${p.comparePrice}/${p.comparePriceUnit ?? ""}` : null,

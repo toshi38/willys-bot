@@ -50,6 +50,18 @@ export const HouseholdConfig = z.object({
   slack: z.object({ bot: z.string().default("food") }).optional(),
   // Who hears about failed runs. Defaults to the first member.
   operator: z.string().email().optional(),
+  // Rules code enforces on every product bought, whatever the model
+  // decides (see core/rules.ts), and standing orders added to every week.
+  rules: z
+    .object({
+      // Brands bought only with a stated exception, e.g. ["Garant", "Eldorado"].
+      avoidBrands: z.array(z.string()).default([]),
+      // Products that look like they contain gluten need a stated check.
+      glutenFree: z.boolean().default(false),
+      // Bought every week unless a member removes them that week.
+      staples: z.array(z.object({ name: z.string(), productCode: z.string(), qty: z.number().int().min(1).max(50) })).default([]),
+    })
+    .default({ avoidBrands: [], glutenFree: false, staples: [] }),
   plan: z.object({
     // Batch-cooked dishes per week and portions of each; a household that
     // cooks every night uses one portion count per dinner instead.

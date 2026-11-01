@@ -202,3 +202,21 @@ describe("failure alerts", () => {
     assert.equal(env.resend.sent.length, 1);
   });
 });
+
+describe("standing orders", () => {
+  let env: Env;
+  before(async () => (env = await setup({ rules: { staples: [{ name: "skyr for Carin", productCode: "SKYR_ST", qty: 4 }] } })));
+  after(() => env.stop());
+
+  test("a standing order is in every drafted week as a request, and the planner is told it is there", async () => {
+    // The product must be known before the week is drafted, as after any
+    // earlier search or offer snapshot.
+    env.claude([{ calls: [{ tool: "search_products", args: { query: "skyr" } }], output: { reply: "", redraft: "", summary: "" } }, { calls: SEARCHES, output: goodDraft() }]);
+    await env.wb(["slack"], JSON.stringify({ type: "message", from: stephen, text: "what is on the list?", where: where(), thread: [] }));
+    const res = await env.wb(["plan"]);
+    assert.equal(res.code, 0, res.stderr);
+    const skyr = row<{ qty: number; source: string; requested_by: string }>(env, `SELECT qty, source, requested_by FROM week_items WHERE product_code = 'SKYR_ST'`);
+    assert.deepEqual([skyr.qty, skyr.source, skyr.requested_by], [4, "request", "standing order"]);
+    assert.match(env.claudeLog().at(-1)!.prompt, /Already in this week's shop \(fixed\)[\s\S]*4 x Naturell Skyr 400g/);
+  });
+});
