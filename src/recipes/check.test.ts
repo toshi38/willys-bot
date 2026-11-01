@@ -100,7 +100,7 @@ test("a recipe saved as text reads as steps with the timers its method mentions"
   });
   assert.deepEqual(r.ingredients.map((i) => i.name), ["1400 g kycklinglårfilé (2 x 700 g)", "1 kg butternutpumpa", "salt"]);
   assert.deepEqual(r.steps.map((s) => s.kind), ["prep", "cook", "simmer", "serve"]);
-  assert.deepEqual(r.steps[2]!.timer, { minutes: 25, upTo: 30, label: "Step 3" });
+  assert.deepEqual(r.steps[2]!.timer, { minutes: 25, upTo: 30, label: "Simmer" });
   assert.equal(r.steps[0]!.timer, undefined);
 });
 

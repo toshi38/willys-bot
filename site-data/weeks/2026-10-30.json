@@ -68,7 +68,7 @@
       "minutes": 0,
       "timer": {
        "minutes": 8,
-       "label": "Step 2"
+       "label": "Cook"
       }
      },
      {
@@ -87,7 +87,7 @@
       "timer": {
        "minutes": 120,
        "upTo": 150,
-       "label": "Step 4"
+       "label": "Simmer"
       }
      },
      {
@@ -98,7 +98,7 @@
       "minutes": 0,
       "timer": {
        "minutes": 20,
-       "label": "Step 5"
+       "label": "Serve"
       }
      }
     ]
@@ -276,7 +276,7 @@
       "timer": {
        "minutes": 25,
        "upTo": 30,
-       "label": "Step 3"
+       "label": "Simmer"
       }
      },
      {

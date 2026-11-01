@@ -34,6 +34,9 @@ const KINDS: [RegExp, Step["kind"]][] = [
   [/\b(chop|cube|slice|grate|dice|peel|hacka|skär|tärna|riv|skala)/i, "prep"],
 ];
 
+// What a timer read from text is called, by the step's kind.
+const LABELS: Record<Step["kind"], string> = { preheat: "Oven", prep: "Prep", cook: "Cook", simmer: "Simmer", bake: "Oven", rest: "Rest", assemble: "Assemble", serve: "Serve" };
+
 export function fromText(r: { name: string; servings: number | null; ingredients: string; method: string; notes?: string | null }): Recipe {
   const ingredients = r.ingredients
     .split("\n")
@@ -46,7 +49,7 @@ export function fromText(r: { name: string; servings: number | null; ingredients
     .filter(Boolean);
   const steps: Step[] = lines.map((text, i) => {
     const kind = KINDS.find(([re]) => re.test(text))?.[1] ?? "cook";
-    const timer = findTimer(text, `Step ${i + 1}`);
+    const timer = findTimer(text, LABELS[kind]);
     return { id: `s${i + 1}`, kind, text, uses: [], minutes: 0, ...(timer ? { timer } : {}) };
   });
   if (steps.length === 1) steps.push({ id: "s2", kind: "serve", text: "Serve.", uses: [], minutes: 0 });

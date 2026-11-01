@@ -4,9 +4,10 @@ import { amount, Recipe, type Ingredient, type Step } from "./recipe.ts";
 
 // The public recipe site: an index of weeks, a page per week with its
 // dishes, and for each dish the whole recipe and a cook mode that walks the
-// steps with timers. Pages are static HTML with relative links, so the same
-// build works on a preview URL and on the real domain. The data is only
-// what a recipe needs: no prices, shopping, members or reasons.
+// steps with timers (site/cook.js). Pages are static HTML with relative
+// links, so the same build works on a preview URL and on the real domain.
+// The data is only what a recipe needs: no prices, shopping, members or
+// reasons.
 
 export const SiteWeek = z.object({
   pickup: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -24,7 +25,7 @@ export const SiteWeek = z.object({
 export type SiteWeek = z.infer<typeof SiteWeek>;
 
 export const SiteConfig = z.object({
-  title: z.string().default("Recipes"),
+  title: z.string().default("Food"),
   language: z.enum(["en", "sv"]).default("en"),
 });
 export type SiteConfig = z.infer<typeof SiteConfig>;
@@ -33,33 +34,40 @@ export type Language = SiteConfig["language"];
 
 export const STRINGS = {
   en: {
-    week: "W",
+    week: "Week",
+    dinners: ["No dinners", "One dinner", "Two dinners", "Three dinners", "Four dinners", "Five dinners", "Six dinners", "Seven dinners"],
+    ordinals: ["Dinner one", "Dinner two", "Dinner three", "Dinner four", "Dinner five", "Dinner six", "Dinner seven"],
     portions: "portions",
-    serves: "Serves",
-    ready: "Ready in about",
-    handsOn: "hands-on",
+    steps: "steps",
+    portionsEach: "portions each",
+    total: "Total",
+    handsOn: "Hands-on",
+    portionsLabel: "Portions",
     min: "min",
     ingredients: "Ingredients",
+    gather: "Tap as you gather",
     equipment: "You need",
     method: "Method",
     notes: "Notes",
-    cook: "Start cooking",
+    cookAlong: "Cook along, step by step",
     allWeeks: "All weeks",
     noWeeks: "No weeks yet.",
     pantry: "at home",
-    start: "Start",
+    start: "Start cooking",
     back: "Back",
+    nextStep: "Next step",
     next: "Next",
     done: "Done",
+    recipe: "Recipe",
     beforeStart: "Before you start",
-    timerStart: "Start timer",
-    timerGoOn: "Start timer and carry on",
+    stepOf: "Step {n} of {total}",
+    startTimer: "Start {label} timer",
     timerRunning: "Timer running",
     timerDone: "Done!",
+    nextTimer: "Next timer",
     waitsFor: "Waits for",
-    whileRuns: "This runs on its own: carry on with the next step.",
-    upTo: "up to",
-    step: "Step",
+    whileRuns: "This runs on its own: start the timer and carry on.",
+    runsOnItsOwn: "runs on its own",
     oven: "Oven",
     fan: "fan",
     heat: { low: "Low heat", medium: "Medium heat", high: "High heat" },
@@ -69,33 +77,40 @@ export const STRINGS = {
     to: "to",
   },
   sv: {
-    week: "V",
+    week: "Vecka",
+    dinners: ["Inga middagar", "En middag", "Två middagar", "Tre middagar", "Fyra middagar", "Fem middagar", "Sex middagar", "Sju middagar"],
+    ordinals: ["Middag ett", "Middag två", "Middag tre", "Middag fyra", "Middag fem", "Middag sex", "Middag sju"],
     portions: "portioner",
-    serves: "Portioner",
-    ready: "Klart på ungefär",
-    handsOn: "aktiv tid",
+    steps: "steg",
+    portionsEach: "portioner var",
+    total: "Totalt",
+    handsOn: "Aktiv tid",
+    portionsLabel: "Portioner",
     min: "min",
     ingredients: "Ingredienser",
+    gather: "Bocka av när du plockar fram",
     equipment: "Du behöver",
     method: "Gör så här",
     notes: "Tips",
-    cook: "Börja laga",
+    cookAlong: "Laga steg för steg",
     allWeeks: "Alla veckor",
     noWeeks: "Inga veckor än.",
     pantry: "finns hemma",
-    start: "Börja",
+    start: "Börja laga",
     back: "Bakåt",
+    nextStep: "Nästa steg",
     next: "Nästa",
     done: "Klar",
+    recipe: "Recept",
     beforeStart: "Innan du börjar",
-    timerStart: "Starta timer",
-    timerGoOn: "Starta timer och fortsätt",
+    stepOf: "Steg {n} av {total}",
+    startTimer: "Starta timer: {label}",
     timerRunning: "Timern går",
     timerDone: "Klart!",
+    nextTimer: "Nästa timer",
     waitsFor: "Väntar på",
-    whileRuns: "Det här sköter sig självt: fortsätt med nästa steg.",
-    upTo: "upp till",
-    step: "Steg",
+    whileRuns: "Det här sköter sig självt: starta timern och fortsätt.",
+    runsOnItsOwn: "sköter sig självt",
     oven: "Ugn",
     fan: "varmluft",
     heat: { low: "Låg värme", medium: "Medelvärme", high: "Hög värme" },
@@ -106,7 +121,7 @@ export const STRINGS = {
   },
 } as const;
 
-export const KIND_ICONS: Record<Step["kind"], string> = { preheat: "🌡️", prep: "🔪", cook: "🍳", simmer: "🍲", bake: "🔥", rest: "⏸️", assemble: "🧩", serve: "🍽️" };
+const FONTS = "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Instrument+Sans:wght@400;500;600&display=swap";
 
 export function esc(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -144,14 +159,19 @@ export function isoWeek(date: string): number {
   return 1 + Math.round(((d.getTime() - firstThursday.getTime()) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
 }
 
-// "W44 · Fri 30 Oct to Thu 5 Nov": the pickup and the week of food it is
-// for, up to the day before the next pickup.
-export function weekLabel(pickup: string, lang: Language): string {
+// "Week 44".
+export function weekName(pickup: string, lang: Language): string {
+  return `${STRINGS[lang].week} ${isoWeek(pickup)}`;
+}
+
+// "Fri 30 Oct to Thu 5 Nov": the pickup and the week of food it is for, up
+// to the day before the next pickup.
+export function weekRange(pickup: string, lang: Language): string {
   const t = STRINGS[lang];
   const d = new Date(`${pickup}T12:00:00Z`);
   const end = new Date(d.getTime() + 6 * 86400000);
   const fmt = (x: Date) => `${t.days[x.getUTCDay()]} ${x.getUTCDate()} ${t.months[x.getUTCMonth()]}`;
-  return `${t.week}${isoWeek(pickup)} · ${fmt(d)} ${t.to} ${fmt(end)}`;
+  return `${fmt(d)} ${t.to} ${fmt(end)}`;
 }
 
 function minutes(n: number, lang: Language): string {
@@ -162,16 +182,28 @@ function minutes(n: number, lang: Language): string {
   return m ? `${h} h ${m} ${t.min}` : `${h} h`;
 }
 
+// The colour class of the i-th dish in a week.
+const dishClass = (i: number) => `d-${i % 4}`;
+
+// An ingredient as one line, for cook mode: "<b>1400 g</b> chicken, in
+// pieces".
 export function ingredientLine(i: Ingredient, lang: Language, qty = i.qty): string {
   const a = amount(qty, i.unit);
-  const pantry = i.fromPantry ? ` <span class="pantry">${esc(STRINGS[lang].pantry)}</span>` : "";
+  const pantry = i.fromPantry ? ` <span class="home">${esc(STRINGS[lang].pantry)}</span>` : "";
   return `${a ? `<b>${esc(a)}</b> ` : ""}${esc(i.name)}${i.prep ? `<span class="prep">, ${esc(i.prep)}</span>` : ""}${pantry}`;
 }
 
 function timerText(s: Step, lang: Language): string {
   if (!s.timer) return "";
   const t = STRINGS[lang];
-  return s.timer.upTo ? `${s.timer.minutes} ${t.to} ${s.timer.upTo} ${t.min}` : `${s.timer.minutes} ${t.min}`;
+  const { minutes: from, upTo } = s.timer;
+  if (!upTo) return minutes(from, lang);
+  return from < 60 && upTo < 60 ? `${from} ${t.to} ${upTo} ${t.min}` : `${minutes(from, lang)} ${t.to} ${minutes(upTo, lang)}`;
+}
+
+function chips(s: Step, lang: Language): string[] {
+  const t = STRINGS[lang];
+  return [s.oven ? `${t.oven} ${s.oven.celsius}°C${s.oven.fan ? `, ${t.fan}` : ""}` : "", s.heat ? t.heat[s.heat] : ""].filter(Boolean);
 }
 
 function layout(o: { title: string; lang: Language; root: string; body: string; bodyClass?: string; script?: string }): string {
@@ -180,9 +212,11 @@ function layout(o: { title: string; lang: Language; root: string; body: string; 
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#faf8f5" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#171614" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#c8442b">
 <title>${esc(o.title)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="${FONTS}">
 <link rel="stylesheet" href="${o.root}style.css">
 </head>
 <body${o.bodyClass ? ` class="${o.bodyClass}"` : ""}>
@@ -195,34 +229,50 @@ ${o.script ?? ""}
 
 export function indexPage(config: SiteConfig, weeks: SiteWeek[]): string {
   const lang = config.language;
+  const t = STRINGS[lang];
   const sorted = [...weeks].sort((a, b) => b.pickup.localeCompare(a.pickup));
   const items = sorted
     .map((w) => {
-      const slugs = dishSlugs(w);
-      const dishes = w.dishes.map((d, i) => `<li><a href="${w.pickup}/${slugs[i]}/">${esc(d.name)}</a></li>`).join("");
-      return `<section class="week"><h2><a href="${w.pickup}/">${esc(weekLabel(w.pickup, lang))}</a></h2><ul class="dishes">${dishes}</ul></section>`;
+      const dishes = w.dishes.map((d, i) => `<li class="${dishClass(i)}">${esc(d.name)}</li>`).join("");
+      return `<a class="week-link" href="${w.pickup}/"><div class="kicker" style="color:var(--tomato)">${esc(weekName(w.pickup, lang))}</div><div class="range">${esc(weekRange(w.pickup, lang))}</div><ul>${dishes}</ul></a>`;
     })
     .join("\n");
-  return layout({ title: config.title, lang, root: "", body: `<main><h1>${esc(config.title)}</h1>${items || `<p class="muted">${esc(STRINGS[lang].noWeeks)}</p>`}</main>` });
+  return layout({
+    title: config.title,
+    lang,
+    root: "",
+    body: `<div class="page"><header class="band"><div class="kicker">${esc(t.allWeeks)}</div><h1>${esc(config.title)}</h1></header>
+<main class="pad">${items || `<p class="empty">${esc(t.noWeeks)}</p>`}</main></div>`,
+  });
 }
 
 export function weekPage(config: SiteConfig, week: SiteWeek): string {
   const lang = config.language;
   const t = STRINGS[lang];
   const slugs = dishSlugs(week);
+  const portions = new Set(week.dishes.map((d) => d.portions));
   const cards = week.dishes
     .map((d, i) => {
       const tl = d.fromText ? null : timeline(d.recipe);
-      const meta = [`${d.portions} ${t.portions}`, tl ? `${t.ready} ${minutes(tl.totalMinutes, lang)}` : ""].filter(Boolean).join(" · ");
-      return `<a class="dish-card" href="${slugs[i]}/"><strong>${esc(d.name)}</strong>${d.recipe.summary ? `<span>${esc(d.recipe.summary)}</span>` : ""}<span class="muted">${esc(meta)}</span></a>`;
+      const facts = [
+        tl ? minutes(tl.totalMinutes, lang) : `${d.recipe.steps.length} ${t.steps}`,
+        tl ? `${minutes(tl.activeMinutes, lang)} ${t.handsOn.toLowerCase()}` : "",
+        portions.size > 1 ? `${d.portions} ${t.portions}` : "",
+      ].filter(Boolean);
+      return `<a class="dish-card ${dishClass(i)}" href="${slugs[i]}/"><div class="no">${i + 1}</div><div><h2>${esc(d.name)}</h2>${d.recipe.summary ? `<p>${esc(d.recipe.summary)}</p>` : ""}
+${facts.length ? `<div class="facts">${facts.map((f) => `<span>${esc(f)}</span>`).join("")}</div>` : ""}
+<div class="kinds">${d.recipe.steps.map((s) => `<i class="k-${s.kind}"></i>`).join("")}</div></div></a>`;
     })
     .join("\n");
-  const label = weekLabel(week.pickup, lang);
+  const count = t.dinners[week.dishes.length] ?? `${week.dishes.length}`;
   return layout({
-    title: `${label} · ${config.title}`,
+    title: `${weekName(week.pickup, lang)} · ${config.title}`,
     lang,
     root: "../",
-    body: `<main><nav class="crumbs"><a href="../">${esc(t.allWeeks)}</a></nav><h1>${esc(label)}</h1>${cards}</main>`,
+    body: `<div class="page"><header class="band"><a class="back" href="../">← ${esc(t.allWeeks)}</a>
+<div class="kicker" style="margin-top:18px">${esc(weekName(week.pickup, lang))}</div><h1>${esc(count)}</h1><div class="range">${esc(weekRange(week.pickup, lang))}</div>
+${portions.size === 1 ? `<div class="meta"><span></span><span>${[...portions][0]} ${esc(t.portionsEach)}</span></div>` : ""}</header>
+<main class="pad">${cards}</main></div>`,
   });
 }
 
@@ -235,46 +285,48 @@ export function recipePage(config: SiteConfig, week: SiteWeek, index: number): s
   const groups = new Map<string, Ingredient[]>();
   for (const i of r.ingredients) groups.set(i.group ?? "", [...(groups.get(i.group ?? "") ?? []), i]);
   const ingredients = [...groups]
-    .map(([g, list]) => `${g ? `<h3>${esc(g)}</h3>` : ""}<ul class="check">${list.map((i) => `<li><label><input type="checkbox"><span>${ingredientLine(i, lang)}</span></label></li>`).join("")}</ul>`)
+    .map(
+      ([g, list]) =>
+        `${g ? `<h4>${esc(g)}</h4>` : ""}<ul class="ing">${list
+          .map((i) => {
+            const a = amount(i.qty, i.unit);
+            return `<li><label><input type="checkbox"><span class="amt">${esc(a)}</span><span><span class="n">${esc(i.name)}</span>${i.prep ? `<span class="prep">, ${esc(i.prep)}</span>` : ""}${i.fromPantry ? `<span class="home">${esc(t.pantry)}</span>` : ""}</span></label></li>`;
+          })
+          .join("")}</ul>`,
+    )
     .join("");
   const steps = r.steps
-    .map((s) => {
-      const chips = [
-        s.timer ? `<span class="chip timer">⏱ ${esc(timerText(s, lang))}</span>` : "",
-        s.oven ? `<span class="chip">${esc(`${t.oven} ${s.oven.celsius}°C${s.oven.fan ? `, ${t.fan}` : ""}`)}</span>` : "",
-        s.heat ? `<span class="chip">${esc(t.heat[s.heat])}</span>` : "",
-      ].join("");
-      return `<li class="kind-${s.kind}"><span class="kind">${KIND_ICONS[s.kind]} ${esc(t.kinds[s.kind])}</span><p>${esc(s.text)}</p>${chips ? `<div class="chips">${chips}</div>` : ""}</li>`;
+    .map((s, i) => {
+      const extra = chips(s, lang);
+      const tag = s.timer ? `<span class="tag">${esc(timerText(s, lang))}${s.passive ? `, ${esc(t.runsOnItsOwn)}` : ""}</span>` : "";
+      return `<li class="k-${s.kind}"><div class="num">${i + 1}</div><div><div class="kind">${esc(t.kinds[s.kind])}${extra.length ? ` <span>· ${esc(extra.join(" · "))}</span>` : ""}</div><p>${esc(s.text)}</p>${tag}</div></li>`;
     })
     .join("");
-  const facts = [
-    `${t.serves} ${d.portions}`,
-    tl ? `${t.ready} ${minutes(tl.totalMinutes, lang)} (${minutes(tl.activeMinutes, lang)} ${t.handsOn})` : "",
-  ].filter(Boolean);
-  const label = weekLabel(week.pickup, lang);
+  const stats = [
+    tl ? `<div class="k-cook"><b>${tl.totalMinutes}<small> ${esc(t.min)}</small></b><span>${esc(t.total)}</span></div>` : "",
+    tl ? `<div class="k-prep"><b>${tl.activeMinutes}<small> ${esc(t.min)}</small></b><span>${esc(t.handsOn)}</span></div>` : "",
+    `<div class="k-serve"><b>${d.portions}</b><span>${esc(t.portionsLabel)}</span></div>`,
+  ].join("");
   return layout({
     title: `${d.name} · ${config.title}`,
     lang,
     root: "../../",
-    body: `<main class="recipe">
-<nav class="crumbs"><a href="../../">${esc(t.allWeeks)}</a> › <a href="../">${esc(label)}</a></nav>
-<h1>${esc(d.name)}</h1>
-${r.summary ? `<p class="summary">${esc(r.summary)}</p>` : ""}
-<p class="facts">${facts.map(esc).join(" · ")}</p>
-<a class="button primary" href="cook/">${KIND_ICONS.cook} ${esc(t.cook)}</a>
-${r.equipment.length ? `<h2>${esc(t.equipment)}</h2><p>${esc(r.equipment.join(", "))}</p>` : ""}
-<h2>${esc(t.ingredients)}</h2>${ingredients}
-<h2>${esc(t.method)}</h2><ol class="steps">${steps}</ol>
-${r.notes ? `<h2>${esc(t.notes)}</h2><p class="notes">${esc(r.notes)}</p>` : ""}
-</main>`,
-    script: `<script>document.querySelectorAll('.check input').forEach(function(c){c.addEventListener('change',function(){c.closest('li').classList.toggle('got',c.checked)})})</script>`,
+    body: `<div class="page"><header class="band dish ${dishClass(index)}"><a class="back" href="../">← ${esc(weekName(week.pickup, lang))}</a>
+<div class="kicker" style="margin-top:20px">${esc(t.ordinals[index] ?? "")}</div><h1>${esc(d.name)}</h1>${r.summary ? `<p class="lede">${esc(r.summary)}</p>` : ""}</header>
+<main class="pad"><div class="stats" style="grid-template-columns:repeat(${tl ? 3 : 1},1fr)">${stats}</div>
+<a class="cta" href="cook/">${esc(t.cookAlong)} <i>→</i></a>
+${r.equipment.length ? `<h4>${esc(t.equipment)}</h4><p class="equipment">${esc(r.equipment.join(", "))}</p>` : ""}
+<h3 id="ingredients">${esc(t.ingredients)} <small>${esc(t.gather)}</small></h3>${ingredients}
+<h3>${esc(t.method)}</h3><ol class="method">${steps}</ol>
+${r.notes ? `<div class="notes">${esc(r.notes)}</div>` : ""}</main></div>`,
   });
 }
 
 // What cook mode needs, embedded in its page: the recipe with each step's
-// ingredients spelled out, and the interface strings.
+// ingredients and labels spelled out, and the interface strings.
 export function cookData(config: SiteConfig, week: SiteWeek, index: number) {
   const lang = config.language;
+  const t = STRINGS[lang];
   const d = week.dishes[index]!;
   const r = d.recipe;
   const byId = new Map(r.ingredients.map((i) => [i.id, i]));
@@ -287,7 +339,6 @@ export function cookData(config: SiteConfig, week: SiteWeek, index: number) {
     steps: r.steps.map((s) => ({
       id: s.id,
       kind: s.kind,
-      icon: KIND_ICONS[s.kind],
       text: s.text,
       uses: s.uses.flatMap((u) => {
         const i = byId.get(u.ingredient);
@@ -295,13 +346,19 @@ export function cookData(config: SiteConfig, week: SiteWeek, index: number) {
       }),
       timer: s.timer ?? null,
       timerText: timerText(s, lang),
+      startLabel: s.timer ? t.startTimer.replace("{label}", lang === "en" ? s.timer.label.toLowerCase() : s.timer.label) : "",
       passive: s.passive ?? false,
       after: s.after ?? [],
-      chips: [s.oven ? `${STRINGS[lang].oven} ${s.oven.celsius}°C${s.oven.fan ? `, ${STRINGS[lang].fan}` : ""}` : "", s.heat ? STRINGS[lang].heat[s.heat] : ""].filter(Boolean),
+      chips: chips(s, lang),
     })),
-    t: STRINGS[lang],
+    t: {
+      min: t.min, done: t.done, start: t.start, next: t.next, nextStep: t.nextStep, beforeStart: t.beforeStart, stepOf: t.stepOf,
+      equipment: t.equipment, ingredients: t.ingredients, timerRunning: t.timerRunning, timerDone: t.timerDone, nextTimer: t.nextTimer,
+      waitsFor: t.waitsFor, whileRuns: t.whileRuns, kinds: t.kinds,
+    },
   };
 }
+export type CookData = ReturnType<typeof cookData>;
 
 export function cookPage(config: SiteConfig, week: SiteWeek, index: number): string {
   const d = week.dishes[index]!;
@@ -309,15 +366,16 @@ export function cookPage(config: SiteConfig, week: SiteWeek, index: number): str
   // </script> cannot appear inside the JSON: every < is escaped.
   const data = JSON.stringify(cookData(config, week, index)).replace(/</g, "\\u003c");
   return layout({
-    title: `${d.name} · ${t.cook}`,
+    title: d.name,
     lang: config.language,
     root: "../../../",
     bodyClass: "cook",
-    body: `<div id="app"><header class="cook-bar"><a class="close" href="../" aria-label="${esc(t.back)}">✕</a><strong>${esc(d.name)}</strong><span id="count"></span></header>
-<div id="timers" class="timers" aria-live="polite"></div>
-<main id="card" class="card-area"></main>
-<footer class="cook-nav"><button id="prev" class="button">${esc(t.back)}</button><button id="next" class="button primary">${esc(t.next)}</button></footer></div>
-<noscript><p>${esc(t.method)}: <a href="../">${esc(d.name)}</a></p></noscript>`,
+    body: `<div id="app">
+<header id="top" class="cook-top k-cook"><div class="bar"><a class="x" href="../" aria-label="${esc(t.back)}">×</a><strong id="count">${esc(t.beforeStart)}</strong><a href="../#ingredients">${esc(t.recipe)}</a></div>
+<div class="progress" id="progress"></div><div class="timers" id="timers" aria-live="polite"></div></header>
+<main id="body" class="cook-body"><noscript><a href="../">${esc(d.name)}</a></noscript></main>
+<footer class="cook-foot"><div id="go"></div><div class="nav"><button id="prev" data-act="prev" disabled>${esc(t.back)}</button><button id="next" class="next" data-act="next">${esc(t.start)}</button></div></footer>
+</div>`,
     script: `<script type="application/json" id="data">${data}</script>\n<script src="../../../cook.js"></script>`,
   });
 }
