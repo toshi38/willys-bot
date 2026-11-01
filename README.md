@@ -71,8 +71,7 @@ cook mode that walks the steps one at a time with timers. Netlify builds it from
 How a recipe is written (steps in cooking order, timers, passive steps that run while you carry
 on) is in `.claude/skills/recipe-writing/SKILL.md`, and `src/recipes/check.ts` enforces it.
 
-The site is public, so secrets are kept out of it three times: hermes checks the export against
-the real secret values before committing it, the pre-commit hook (`.githooks/`, turned on by
+The site is public, so secrets are kept out of it twice: the pre-commit hook (`.githooks/`, turned on by
 `npm install`) checks staged `site-data/` files and runs gitleaks when it is installed, and the
 Netlify build refuses data that looks like it carries a secret.
 
