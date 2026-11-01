@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Context } from "./context.ts";
 
@@ -73,7 +73,11 @@ export async function runClaude(ctx: Context, run: ClaudeRun): Promise<unknown> 
       clearTimeout(timer);
       rmSync(mcpConfig, { force: true });
       try {
-        const out = JSON.parse(stdout) as { is_error?: boolean; structured_output?: unknown; result?: string };
+        const out = JSON.parse(stdout) as { is_error?: boolean; structured_output?: unknown; result?: string; total_cost_usd?: number; duration_ms?: number; num_turns?: number };
+        // Cost and time per run, when asked for (the evals compare models).
+        if (process.env.WILLYS_BOT_USAGE_LOG) {
+          appendFileSync(process.env.WILLYS_BOT_USAGE_LOG, `${JSON.stringify({ model: args[args.indexOf("--model") + 1], costUsd: out.total_cost_usd ?? null, durationMs: out.duration_ms ?? null, turns: out.num_turns ?? null })}\n`);
+        }
         if (out.is_error || code !== 0) return reject(new Error(`claude exited ${code}: ${out.result ?? stderr}`));
         if (out.structured_output === undefined) return reject(new Error("claude returned no structured output"));
         resolve(out.structured_output);

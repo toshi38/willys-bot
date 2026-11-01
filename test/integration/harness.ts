@@ -36,6 +36,10 @@ export const CATALOG: Product[] = [
 // Willys: products, campaigns, a cart, and click-and-collect slots on the
 // pickup day. `failing` makes a path answer with an error.
 export class FakeWillys {
+  readonly catalog: Product[];
+  constructor(catalog: Product[] = CATALOG) {
+    this.catalog = catalog;
+  }
   readonly cart = new Map<string, number>();
   slotInCart: string | null = null;
   readonly calls: { method: string; path: string; body: unknown }[] = [];
@@ -79,9 +83,10 @@ export class FakeWillys {
     if (route === "GET /axfood/rest/customer") return send(res, 200, { uid: "test@example.com", name: "Test", storeId: "9999" });
     if (route === "GET /search/clean") {
       const q = (url.searchParams.get("q") ?? "").toLowerCase();
-      return send(res, 200, page(CATALOG.filter((p) => p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q))));
+      const words = q.split(/\s+/).filter(Boolean);
+      return send(res, 200, page(this.catalog.filter((p) => words.some((w) => p.name.toLowerCase().includes(w) || p.code.toLowerCase().includes(w)))));
     }
-    if (route.startsWith("GET /search/campaigns/")) return send(res, 200, page(url.pathname.endsWith("online") ? CATALOG.filter((p) => p.offer) : []));
+    if (route.startsWith("GET /search/campaigns/")) return send(res, 200, page(url.pathname.endsWith("online") ? this.catalog.filter((p) => p.offer) : []));
     if (route === "GET /axfood/rest/cart") return send(res, 200, this.#cart());
     if (route === "POST /axfood/rest/cart/addProducts") {
       for (const p of (body as { products: { productCodePost: string; qty: number }[] }).products) {
@@ -107,10 +112,10 @@ export class FakeWillys {
 
   #cart() {
     const products = [...this.cart].map(([code, quantity]) => {
-      const p = CATALOG.find((c) => c.code === code)!;
+      const p = this.catalog.find((c) => c.code === code)!;
       return { code, name: p.name, quantity, totalPrice: kr(p.price * quantity) };
     });
-    return { products, totalPrice: kr([...this.cart].reduce((sum, [code, q]) => sum + CATALOG.find((c) => c.code === code)!.price * q, 0)) };
+    return { products, totalPrice: kr([...this.cart].reduce((sum, [code, q]) => sum + this.catalog.find((c) => c.code === code)!.price * q, 0)) };
   }
 }
 

@@ -6,3 +6,6 @@ data/
 # committed. Only the example household is tracked.
 households/*
 !households/example/
+
+# Eval runs: per-run details, kept locally.
+eval/results/
