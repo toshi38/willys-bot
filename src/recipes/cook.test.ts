@@ -87,7 +87,8 @@ test("a step shows its kind, heat, ingredients, the next step and its timer butt
   assert.match(html, /<span class="pill">Simmer · Low heat<\/span>/);
   assert.match(html, /<li><span><b>6 dl<\/b> jasmine rice/);
   assert.match(html, /This runs on its own/);
-  assert.match(html, /<p class="next-up">Next: Squeeze the lime/);
+  assert.match(html, /<p class="next-up"><b>Next<\/b>Squeeze the lime/);
+  assert.match(html, /^<div class="main">.*<\/div><div class="side">.*<\/div>$/s, "the text and the ingredients are separate columns");
   assert.equal(Cook.goHtml(data, state), '<button class="go" data-act="go">Start rice timer <small>12 to 15 min</small></button>');
   assert.equal(Cook.countLabel(data, state), "Step 5 of 6");
   assert.equal(Cook.kindOf(data, state), "simmer");

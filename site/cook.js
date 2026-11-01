@@ -142,15 +142,14 @@
   Cook.bodyHtml = function (data, state, now) {
     var t = data.t;
     if (state.pos === 0) {
-      return '<span class="pill">' + esc(t.beforeStart) + "</span>" +
+      return '<div class="main"><span class="pill">' + esc(t.beforeStart) + "</span>" +
         '<div class="big">' + esc(data.name) + "</div>" +
-        (data.equipment.length ? "<h4>" + esc(t.equipment) + "</h4><p>" + esc(data.equipment.join(", ")) + "</p>" : "") +
-        "<h4>" + esc(t.ingredients) + '</h4><ul class="uses">' + data.ingredients.map(function (l) { return "<li><span>" + l + "</span></li>"; }).join("") + "</ul>";
+        (data.equipment.length ? "<h4>" + esc(t.equipment) + "</h4><p>" + esc(data.equipment.join(", ")) + "</p>" : "") + "</div>" +
+        '<div class="side"><h4>' + esc(t.ingredients) + '</h4><ul class="uses">' + data.ingredients.map(function (l) { return "<li><span>" + l + "</span></li>"; }).join("") + "</ul></div>";
     }
     var s = data.steps[state.pos - 1];
-    var html = '<span class="pill">' + esc(t.kinds[s.kind]) + (s.chips.length ? " · " + esc(s.chips.join(" · ")) : "") + "</span>" +
+    var html = '<div class="main"><span class="pill">' + esc(t.kinds[s.kind]) + (s.chips.length ? " · " + esc(s.chips.join(" · ")) : "") + "</span>" +
       '<div class="big">' + esc(s.text) + "</div>";
-    if (s.uses.length) html += '<ul class="uses">' + s.uses.map(function (l) { return "<li><span>" + l + "</span></li>"; }).join("") + "</ul>";
     var waits = s.after.map(function (id) { return Cook.timerFor(state, id); }).filter(function (x) { return x && !x.ringing; });
     if (waits.length) {
       html += '<div class="waits">' + esc(t.waitsFor) + ": " + waits.map(function (x) {
@@ -158,9 +157,11 @@
       }).join(", ") + "</div>";
     }
     if (s.timer && s.passive) html += '<p class="aside">' + esc(t.whileRuns) + "</p>";
+    html += '</div><div class="side">';
+    if (s.uses.length) html += '<ul class="uses">' + s.uses.map(function (l) { return "<li><span>" + l + "</span></li>"; }).join("") + "</ul>";
     var next = data.steps[state.pos];
-    if (next) html += '<p class="next-up">' + esc(t.next) + ": " + esc(next.text) + "</p>";
-    return html;
+    if (next) html += '<p class="next-up"><b>' + esc(t.next) + "</b>" + esc(next.text) + "</p>";
+    return html + "</div>";
   };
 
   Cook.goHtml = function (data, state) {
@@ -228,7 +229,8 @@
       $("count").textContent = Cook.countLabel(data, state);
       $("progress").innerHTML = Cook.progressHtml(data, state);
       $("timers").innerHTML = Cook.timersHtml(data, state, now);
-      $("body").innerHTML = Cook.bodyHtml(data, state, now);
+      $("step").innerHTML = Cook.bodyHtml(data, state, now);
+      $("step").className = "wrap" + (state.pos === 0 ? " overview" : "");
       $("body").className = "cook-body k-" + Cook.kindOf(data, state);
       $("go").innerHTML = Cook.goHtml(data, state);
       $("go").className = "k-" + Cook.kindOf(data, state);

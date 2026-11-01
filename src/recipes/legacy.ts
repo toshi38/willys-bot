@@ -1,4 +1,4 @@
-import type { Recipe, Step, Timer } from "./recipe.ts";
+import type { Ingredient, Recipe, Step, Timer } from "./recipe.ts";
 
 // Recipes saved as text (one ingredient per line and a numbered method)
 // read as a Recipe, so the site can show them and cook mode can offer the
@@ -34,6 +34,22 @@ const KINDS: [RegExp, Step["kind"]][] = [
   [/\b(chop|cube|slice|grate|dice|peel|hacka|skär|tärna|riv|skala)/i, "prep"],
 ];
 
+// "1400 g kycklinglårfilé (2 x 700 g)", "2 yellow onions", "1,45 kg ...":
+// a leading amount and unit. Ranges and alternatives ("9 dl till 1 liter")
+// stay as text.
+const UNIT = "g|kg|hg|dl|cl|ml|l|liter|msk|tsk|krm|tbsp|tsp|st|cans?|tins?|packs?|punnets?|cloves?|klyftor|burkar?|paket|förp";
+const AMOUNT = new RegExp(`^(\\d+(?:[.,]\\d+)?|\\d+\\/\\d+)\\s*(${UNIT})?\\s+(.+)$`, "i");
+const PANTRY = /\s*\((?:pantry|at home|hemma|finns hemma)\)\s*$/i;
+
+export function parseIngredient(line: string, id: string): Ingredient {
+  const fromPantry = PANTRY.test(line);
+  const text = line.replace(PANTRY, "").trim();
+  const m = text.match(AMOUNT);
+  if (!m || /^(?:-|to|till|or|eller|à)\b/i.test(m[3]!)) return { id, name: text, ...(fromPantry ? { fromPantry } : {}) };
+  const [a, b] = m[1]!.includes("/") ? m[1]!.split("/").map(Number) : [Number(m[1]!.replace(",", ".")), 1];
+  return { id, name: m[3]!, qty: a! / b!, ...(m[2] ? { unit: m[2] } : {}), ...(fromPantry ? { fromPantry } : {}) };
+}
+
 // What a timer read from text is called, by the step's kind.
 const LABELS: Record<Step["kind"], string> = { preheat: "Oven", prep: "Prep", cook: "Cook", simmer: "Simmer", bake: "Oven", rest: "Rest", assemble: "Assemble", serve: "Serve" };
 
@@ -42,7 +58,7 @@ export function fromText(r: { name: string; servings: number | null; ingredients
     .split("\n")
     .map((l) => l.replace(/^\s*[-*]\s*/, "").trim())
     .filter(Boolean)
-    .map((name, i) => ({ id: `i${i + 1}`, name }));
+    .map((line, i) => parseIngredient(line, `i${i + 1}`));
   const lines = r.method
     .split(/\n+/)
     .map((l) => l.replace(/^\s*\d+[.)]\s*/, "").trim())

@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { recipeProblems, timeline } from "./check.ts";
-import { fromText } from "./legacy.ts";
+import { fromText, parseIngredient } from "./legacy.ts";
 import { Recipe, amount } from "./recipe.ts";
 
 const skill = readFileSync(new URL("../../.claude/skills/recipe-writing/SKILL.md", import.meta.url), "utf8");
@@ -98,7 +98,11 @@ test("a recipe saved as text reads as steps with the timers its method mentions"
     method:
       "1. Cube the butternut and chop the onion.\n2. Brown the chicken in a pot, set aside.\n3. Add the butternut, chicken and coconut milk. Simmer 25 to 30 minutes until tender.\n4. Finish with lime juice and salt. Serve with rice.",
   });
-  assert.deepEqual(r.ingredients.map((i) => i.name), ["1400 g kycklinglårfilé (2 x 700 g)", "1 kg butternutpumpa", "salt"]);
+  assert.deepEqual(r.ingredients, [
+    { id: "i1", name: "kycklinglårfilé (2 x 700 g)", qty: 1400, unit: "g" },
+    { id: "i2", name: "butternutpumpa", qty: 1, unit: "kg" },
+    { id: "i3", name: "salt" },
+  ]);
   assert.deepEqual(r.steps.map((s) => s.kind), ["prep", "cook", "simmer", "serve"]);
   assert.deepEqual(r.steps[2]!.timer, { minutes: 25, upTo: 30, label: "Simmer" });
   assert.equal(r.steps[0]!.timer, undefined);
@@ -113,4 +117,19 @@ test("amounts drop trailing zeros", () => {
   assert.equal(amount(1.5, "dl"), "1.5 dl");
   assert.equal(amount(2, undefined), "2");
   assert.equal(amount(undefined, "g"), "");
+});
+
+test("ingredients saved as text have their amount, unit and pantry note read out", () => {
+  const p = (line: string) => parseIngredient(line, "x");
+  assert.deepEqual(p("2 yellow onions"), { id: "x", name: "yellow onions", qty: 2 });
+  assert.deepEqual(p("2 cans coconut milk (pantry)"), { id: "x", name: "coconut milk", qty: 2, unit: "cans", fromPantry: true });
+  assert.deepEqual(p("1,45 kg kycklingfilé (eller 1,3 kg fläskytterfilé)"), { id: "x", name: "kycklingfilé (eller 1,3 kg fläskytterfilé)", qty: 1.45, unit: "kg" });
+  assert.deepEqual(p("1/2 tsk salt"), { id: "x", name: "salt", qty: 0.5, unit: "tsk" });
+  assert.deepEqual(p("2 limes (juice and zest)"), { id: "x", name: "limes (juice and zest)", qty: 2 });
+  assert.deepEqual(p("4 garlic cloves"), { id: "x", name: "garlic cloves", qty: 4 });
+  // Ranges and alternatives stay whole rather than half read.
+  assert.deepEqual(p("9 dl till 1 liter svampbuljong (glutenfri)"), { id: "x", name: "9 dl till 1 liter svampbuljong (glutenfri)" });
+  assert.deepEqual(p("450 till 500 g babyspenat"), { id: "x", name: "450 till 500 g babyspenat" });
+  assert.deepEqual(p("salt, pepper, oil"), { id: "x", name: "salt, pepper, oil" });
+  assert.deepEqual(p("rice to serve (pantry)"), { id: "x", name: "rice to serve", fromPantry: true });
 });

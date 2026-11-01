@@ -13,35 +13,52 @@
     "ingredients": [
      {
       "id": "i1",
-      "name": "1 kg beef chuck, in 3 cm cubes"
+      "name": "beef chuck, in 3 cm cubes",
+      "qty": 1,
+      "unit": "kg"
      },
      {
       "id": "i2",
-      "name": "2 punnets mushrooms (500 g), quartered"
+      "name": "mushrooms (500 g), quartered",
+      "qty": 2,
+      "unit": "punnets"
      },
      {
       "id": "i3",
-      "name": "3 yellow onions, chopped"
+      "name": "yellow onions, chopped",
+      "qty": 3
      },
      {
       "id": "i4",
-      "name": "4 cloves garlic"
+      "name": "garlic",
+      "qty": 4,
+      "unit": "cloves"
      },
      {
       "id": "i5",
-      "name": "2 tins crushed tomatoes (pantry)"
+      "name": "crushed tomatoes",
+      "qty": 2,
+      "unit": "tins",
+      "fromPantry": true
      },
      {
       "id": "i6",
-      "name": "2 tins kidney beans, drained (pantry)"
+      "name": "kidney beans, drained",
+      "qty": 2,
+      "unit": "tins",
+      "fromPantry": true
      },
      {
       "id": "i7",
-      "name": "2 tsp chili flakes"
+      "name": "chili flakes",
+      "qty": 2,
+      "unit": "tsp"
      },
      {
       "id": "i8",
-      "name": "2 tsp ground cumin, 2 tsp smoked paprika (gluten free)"
+      "name": "ground cumin, 2 tsp smoked paprika (gluten free)",
+      "qty": 2,
+      "unit": "tsp"
      },
      {
       "id": "i9",
@@ -49,7 +66,8 @@
      },
      {
       "id": "i10",
-      "name": "Rice to serve (pantry)"
+      "name": "Rice to serve",
+      "fromPantry": true
      }
     ],
     "steps": [
@@ -116,35 +134,49 @@
     "ingredients": [
      {
       "id": "i1",
-      "name": "2 packs firm tofu (400 g), in cubes, patted dry"
+      "name": "firm tofu (400 g), in cubes, patted dry",
+      "qty": 2,
+      "unit": "packs"
      },
      {
       "id": "i2",
-      "name": "900 g skinless chicken breast fillet, in strips"
+      "name": "skinless chicken breast fillet, in strips",
+      "qty": 900,
+      "unit": "g"
      },
      {
       "id": "i3",
-      "name": "3 zucchini, in half moons"
+      "name": "zucchini, in half moons",
+      "qty": 3
      },
      {
       "id": "i4",
-      "name": "1 punnet mushrooms (250 g), sliced"
+      "name": "mushrooms (250 g), sliced",
+      "qty": 1,
+      "unit": "punnet"
      },
      {
       "id": "i5",
-      "name": "1 onion, sliced"
+      "name": "onion, sliced",
+      "qty": 1
      },
      {
       "id": "i6",
-      "name": "3 cloves garlic, a thumb of ginger, grated"
+      "name": "garlic, a thumb of ginger, grated",
+      "qty": 3,
+      "unit": "cloves"
      },
      {
       "id": "i7",
-      "name": "4 tbsp Mrs Chang or Pearl River Bridge mushroom soy (gluten free, at home)"
+      "name": "Mrs Chang or Pearl River Bridge mushroom soy (gluten free, at home)",
+      "qty": 4,
+      "unit": "tbsp"
      },
      {
       "id": "i8",
-      "name": "1 tbsp cornflour (majsstärkelse), 1 tsp sugar, chili flakes"
+      "name": "cornflour (majsstärkelse), 1 tsp sugar, chili flakes",
+      "qty": 1,
+      "unit": "tbsp"
      },
      {
       "id": "i9",
@@ -152,7 +184,8 @@
      },
      {
       "id": "i10",
-      "name": "Rice to serve (pantry)"
+      "name": "Rice to serve",
+      "fromPantry": true
      }
     ],
     "steps": [
@@ -213,31 +246,43 @@
     "ingredients": [
      {
       "id": "i1",
-      "name": "1400 g kycklinglårfilé (2 x 700 g)"
+      "name": "kycklinglårfilé (2 x 700 g)",
+      "qty": 1400,
+      "unit": "g"
      },
      {
       "id": "i2",
-      "name": "1 kg butternutpumpa"
+      "name": "butternutpumpa",
+      "qty": 1,
+      "unit": "kg"
      },
      {
       "id": "i3",
-      "name": "2 yellow onions"
+      "name": "yellow onions",
+      "qty": 2
      },
      {
       "id": "i4",
-      "name": "4 garlic cloves"
+      "name": "garlic cloves",
+      "qty": 4
      },
      {
       "id": "i5",
-      "name": "30 g fresh ginger"
+      "name": "fresh ginger",
+      "qty": 30,
+      "unit": "g"
      },
      {
       "id": "i6",
-      "name": "2 limes (juice and zest)"
+      "name": "limes (juice and zest)",
+      "qty": 2
      },
      {
       "id": "i7",
-      "name": "2 cans coconut milk (pantry)"
+      "name": "coconut milk",
+      "qty": 2,
+      "unit": "cans",
+      "fromPantry": true
      },
      {
       "id": "i8",
@@ -249,7 +294,8 @@
      },
      {
       "id": "i10",
-      "name": "rice to serve (pantry)"
+      "name": "rice to serve",
+      "fromPantry": true
      }
     ],
     "steps": [

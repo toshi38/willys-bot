@@ -241,8 +241,8 @@ export function indexPage(config: SiteConfig, weeks: SiteWeek[]): string {
     title: config.title,
     lang,
     root: "",
-    body: `<div class="page"><header class="band"><div class="kicker">${esc(t.allWeeks)}</div><h1>${esc(config.title)}</h1></header>
-<main class="pad">${items || `<p class="empty">${esc(t.noWeeks)}</p>`}</main></div>`,
+    body: `<header class="band"><div class="wrap"><div class="kicker">${esc(t.allWeeks)}</div><h1>${esc(config.title)}</h1></div></header>
+<main class="wrap">${items ? `<div class="weeks">${items}</div>` : `<p class="empty">${esc(t.noWeeks)}</p>`}</main>`,
   });
 }
 
@@ -269,10 +269,10 @@ ${facts.length ? `<div class="facts">${facts.map((f) => `<span>${esc(f)}</span>`
     title: `${weekName(week.pickup, lang)} · ${config.title}`,
     lang,
     root: "../",
-    body: `<div class="page"><header class="band"><a class="back" href="../">← ${esc(t.allWeeks)}</a>
+    body: `<header class="band"><div class="wrap"><a class="back" href="../">← ${esc(t.allWeeks)}</a>
 <div class="kicker" style="margin-top:18px">${esc(weekName(week.pickup, lang))}</div><h1>${esc(count)}</h1><div class="range">${esc(weekRange(week.pickup, lang))}</div>
-${portions.size === 1 ? `<div class="meta"><span></span><span>${[...portions][0]} ${esc(t.portionsEach)}</span></div>` : ""}</header>
-<main class="pad">${cards}</main></div>`,
+${portions.size === 1 ? `<div class="meta">${[...portions][0]} ${esc(t.portionsEach)}</div>` : ""}</div></header>
+<main class="wrap"><div class="dishes">${cards}</div></main>`,
   });
 }
 
@@ -284,13 +284,14 @@ export function recipePage(config: SiteConfig, week: SiteWeek, index: number): s
   const tl = d.fromText ? null : timeline(r);
   const groups = new Map<string, Ingredient[]>();
   for (const i of r.ingredients) groups.set(i.group ?? "", [...(groups.get(i.group ?? "") ?? []), i]);
+  const amounts = r.ingredients.some((i) => i.qty !== undefined);
   const ingredients = [...groups]
     .map(
       ([g, list]) =>
-        `${g ? `<h4>${esc(g)}</h4>` : ""}<ul class="ing">${list
+        `${g ? `<h4>${esc(g)}</h4>` : ""}<ul class="ing${amounts ? "" : " no-amounts"}">${list
           .map((i) => {
             const a = amount(i.qty, i.unit);
-            return `<li><label><input type="checkbox"><span class="amt">${esc(a)}</span><span><span class="n">${esc(i.name)}</span>${i.prep ? `<span class="prep">, ${esc(i.prep)}</span>` : ""}${i.fromPantry ? `<span class="home">${esc(t.pantry)}</span>` : ""}</span></label></li>`;
+            return `<li><label><input type="checkbox">${amounts ? `<span class="amt">${esc(a)}</span>` : ""}<span><span class="n">${esc(i.name)}</span>${i.prep ? `<span class="prep">, ${esc(i.prep)}</span>` : ""}${i.fromPantry ? `<span class="home">${esc(t.pantry)}</span>` : ""}</span></label></li>`;
           })
           .join("")}</ul>`,
     )
@@ -311,14 +312,14 @@ export function recipePage(config: SiteConfig, week: SiteWeek, index: number): s
     title: `${d.name} · ${config.title}`,
     lang,
     root: "../../",
-    body: `<div class="page"><header class="band dish ${dishClass(index)}"><a class="back" href="../">← ${esc(weekName(week.pickup, lang))}</a>
-<div class="kicker" style="margin-top:20px">${esc(t.ordinals[index] ?? "")}</div><h1>${esc(d.name)}</h1>${r.summary ? `<p class="lede">${esc(r.summary)}</p>` : ""}</header>
-<main class="pad"><div class="stats" style="grid-template-columns:repeat(${tl ? 3 : 1},1fr)">${stats}</div>
+    body: `<header class="band dish ${dishClass(index)}"><div class="wrap"><a class="back" href="../">← ${esc(weekName(week.pickup, lang))}</a>
+<div class="kicker" style="margin-top:20px">${esc(t.ordinals[index] ?? "")}</div><h1>${esc(d.name)}</h1>${r.summary ? `<p class="lede">${esc(r.summary)}</p>` : ""}</div></header>
+<main class="wrap recipe"><aside><div class="stats">${stats}</div>
 <a class="cta" href="cook/">${esc(t.cookAlong)} <i>→</i></a>
 ${r.equipment.length ? `<h4>${esc(t.equipment)}</h4><p class="equipment">${esc(r.equipment.join(", "))}</p>` : ""}
-<h3 id="ingredients">${esc(t.ingredients)} <small>${esc(t.gather)}</small></h3>${ingredients}
-<h3>${esc(t.method)}</h3><ol class="method">${steps}</ol>
-${r.notes ? `<div class="notes">${esc(r.notes)}</div>` : ""}</main></div>`,
+<h3 id="ingredients">${esc(t.ingredients)} <small>${esc(t.gather)}</small></h3>${ingredients}</aside>
+<div class="method-col"><h3>${esc(t.method)}</h3><ol class="method">${steps}</ol>
+${r.notes ? `<div class="notes">${esc(r.notes)}</div>` : ""}</div></main>`,
   });
 }
 
@@ -371,10 +372,10 @@ export function cookPage(config: SiteConfig, week: SiteWeek, index: number): str
     root: "../../../",
     bodyClass: "cook",
     body: `<div id="app">
-<header id="top" class="cook-top k-cook"><div class="bar"><a class="x" href="../" aria-label="${esc(t.back)}">×</a><strong id="count">${esc(t.beforeStart)}</strong><a href="../#ingredients">${esc(t.recipe)}</a></div>
-<div class="progress" id="progress"></div><div class="timers" id="timers" aria-live="polite"></div></header>
-<main id="body" class="cook-body"><noscript><a href="../">${esc(d.name)}</a></noscript></main>
-<footer class="cook-foot"><div id="go"></div><div class="nav"><button id="prev" data-act="prev" disabled>${esc(t.back)}</button><button id="next" class="next" data-act="next">${esc(t.start)}</button></div></footer>
+<header id="top" class="cook-top k-cook"><div class="wrap"><div class="bar"><a class="x" href="../" aria-label="${esc(t.back)}">×</a><span class="title">${esc(d.name)}</span><strong id="count">${esc(t.beforeStart)}</strong><a href="../#ingredients">${esc(t.recipe)}</a></div>
+<div class="progress" id="progress"></div><div class="timers" id="timers" aria-live="polite"></div></div></header>
+<main id="body" class="cook-body"><div id="step" class="wrap"><noscript><a href="../">${esc(d.name)}</a></noscript></div></main>
+<footer class="cook-foot"><div class="wrap"><div id="go"></div><div class="nav"><button id="prev" data-act="prev" disabled>${esc(t.back)}</button><button id="next" class="next" data-act="next">${esc(t.start)}</button></div></div></footer>
 </div>`,
     script: `<script type="application/json" id="data">${data}</script>\n<script src="../../../cook.js"></script>`,
   });
