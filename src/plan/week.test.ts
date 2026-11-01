@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { Context } from "../core/context.ts";
 import type { Household } from "../core/household.ts";
-import { Store } from "../core/store.ts";
-import { nextPickup, postChanges, postToWeek, weekThread } from "./week.ts";
+import { Store, type Week, type WeekStatus } from "../core/store.ts";
+import { editable, localDate, nextPickup, postChanges, postToWeek, weekThread } from "./week.ts";
 
 const household = {
   id: "test",
@@ -90,4 +90,55 @@ test("two processes posting at once start one thread and post each change once",
   await Promise.all([postChanges(ctxA), postChanges(ctxB)]);
   assert.equal(posts.filter((p) => String(p.text).startsWith("**Weekly shop")).length, 1);
   assert.equal(posts.filter((p) => String(p.text).startsWith("**Changes**")).length, 1);
+});
+
+const pickupOn = (weekdays: string[], latest = "20:00") => ({ ...household, config: { ...household.config, pickup: { weekdays, earliest: "17:00", latest } } }) as unknown as Household;
+
+test("with several pickup days, the shop runs to whichever comes next", () => {
+  const h = pickupOn(["mon", "thu"]);
+  const day = (s: string) => localDate(nextPickup(h, new Date(s)));
+  assert.equal(day("2026-11-01T12:00:00"), "2026-11-02"); // Sunday
+  assert.equal(day("2026-11-02T19:59:00"), "2026-11-02"); // Monday, window open
+  assert.equal(day("2026-11-02T20:00:00"), "2026-11-05"); // Monday, window closed
+  assert.equal(day("2026-11-03T08:00:00"), "2026-11-05"); // Tuesday
+  assert.equal(day("2026-11-05T21:30:00"), "2026-11-09"); // Thursday, window closed
+  assert.equal(day("2026-12-31T21:00:00"), "2027-01-04"); // across the new year
+});
+
+test("the pickup day is a local midnight", () => {
+  const d = nextPickup(pickupOn(["mon"]), new Date("2026-11-01T12:34:56"));
+  assert.deepEqual([d.getHours(), d.getMinutes(), d.getSeconds()], [0, 0, 0]);
+});
+
+test("a window that closes at midnight moves the shop to the same day next week", () => {
+  assert.equal(localDate(nextPickup(pickupOn(["fri"], "00:00"), new Date("2026-10-23T00:00:00"))), "2026-10-30");
+});
+
+test("a household with no pickup days has no next pickup", () => {
+  assert.throws(() => nextPickup(pickupOn([]), new Date("2026-10-23T10:00:00")), /no pickup day in the next week/);
+});
+
+const weekWith = (id: string, status: WeekStatus) => ({ id, status }) as Week;
+
+test("an open week takes changes, and an approved one until its pickup day has passed", () => {
+  const today = "2026-10-30";
+  for (const id of ["2026-10-29", "2026-10-30", "2026-11-06"]) assert.equal(editable(weekWith(id, "open"), today), true, id);
+  assert.equal(editable(weekWith("2026-11-06", "applied"), today), true);
+  assert.equal(editable(weekWith("2026-10-30", "applied"), today), true);
+  assert.equal(editable(weekWith("2026-10-29", "applied"), today), false);
+  for (const status of ["drafting", "approved", "skipped", "failed"] as const) {
+    assert.equal(editable(weekWith("2026-11-06", status), today), false, status);
+  }
+});
+
+test("editable judges an approved week against today by default", () => {
+  const day = (offset: number) => localDate(new Date(Date.now() + offset * 86_400_000));
+  assert.equal(editable(weekWith(day(1), "applied")), true);
+  assert.equal(editable(weekWith(day(0), "applied")), true);
+  assert.equal(editable(weekWith(day(-1), "applied")), false);
+});
+
+test("a local date is the calendar day where the bot runs, zero padded", () => {
+  assert.equal(localDate(new Date(2026, 0, 5, 23, 59)), "2026-01-05");
+  assert.equal(localDate(new Date(2026, 11, 31, 0, 0)), "2026-12-31");
 });
