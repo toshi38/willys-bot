@@ -62,6 +62,20 @@ decides the week, anything else goes to the same Claude agent. The gateway runs
 `deploy/run.sh <household> slack` for each message or click. When the gateway is not running,
 nothing is posted and email carries on as usual.
 
+## Recipe site
+
+The week's recipes are published at food.toshi38.com: a page per week, each recipe in full, and a
+cook mode that walks the steps one at a time with timers. Netlify builds it from `site-data/`
+(`netlify.toml`); `npm run site -- --data site-data` builds it locally into `dist/`.
+
+How a recipe is written (steps in cooking order, timers, passive steps that run while you carry
+on) is in `.claude/skills/recipe-writing/SKILL.md`, and `src/recipes/check.ts` enforces it.
+
+The site is public, so secrets are kept out of it three times: hermes checks the export against
+the real secret values before committing it, the pre-commit hook (`.githooks/`, turned on by
+`npm install`) checks staged `site-data/` files and runs gitleaks when it is installed, and the
+Netlify build refuses data that looks like it carries a secret.
+
 ## Running on hermes
 
 Timers per household (`deploy/systemd/`): offer snapshot daily at 06:30, inbox every five
