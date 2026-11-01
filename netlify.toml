@@ -1,0 +1,12 @@
+# The public recipe site, built by Netlify from site-data/ (the weeks
+# hermes exports) and src/recipes/. The build stops, and nothing is
+# deployed, when the data does not parse or looks like it carries a
+# secret.
+[build]
+  command = "npm run site -- --data site-data --out dist"
+  publish = "dist"
+  # Only rebuild when the site or its data changed.
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- site site-data src/recipes package.json package-lock.json netlify.toml"
+
+[build.environment]
+  NODE_VERSION = "24"
