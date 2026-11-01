@@ -91,7 +91,8 @@ Netlify build refuses data that looks like it carries a secret.
 ## Running on hermes
 
 Timers per household (`deploy/systemd/`): offer snapshot daily at 06:30, inbox every five
-minutes, plan on Wednesdays at 07:00. A failed run emails the operator (`operator` in
+minutes, plan on Wednesdays at 07:00, and an hourly update that fast-forwards hermes to `main`
+(`deploy/update.sh`), so whatever is pushed to `main` is what runs. A failed run emails the operator (`operator` in
 `household.json`, or the first member) its last log lines, at most once every six hours per
 unit.
 

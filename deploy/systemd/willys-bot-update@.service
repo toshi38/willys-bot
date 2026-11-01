@@ -1,0 +1,12 @@
+[Unit]
+Description=food-bot: update to the latest main (%i)
+After=network-online.target
+Wants=network-online.target
+OnFailure=willys-bot-alert@%i.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/code/willys-bot
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/code/willys-bot/deploy/update.sh %i
+TimeoutStartSec=600
