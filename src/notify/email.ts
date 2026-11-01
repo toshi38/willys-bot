@@ -8,7 +8,8 @@ import { readSecret } from "../core/secrets.ts";
 // read back from Resend's received-email API, so no mailbox password is
 // involved and nothing reads a person's own inbox.
 
-const API = "https://api.resend.com";
+// Overridable so integration tests can run against a local fake.
+const API = process.env.RESEND_API_URL ?? "https://api.resend.com";
 
 export interface OutgoingEmail {
   subject: string;

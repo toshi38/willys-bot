@@ -7,9 +7,10 @@ import type { CampaignKind, Cart, Customer, PickupSlot, PickupSlots, ProductPage
 // shopping. Login and cart calls follow ErikHellman/willys-agent (MIT); slot
 // endpoints are the ones willys.se's own checkout calls.
 
-const BASE_URL = "https://www.willys.se";
+// Overridable so integration tests can run against a local fake.
+const BASE_URL = process.env.WILLYS_BASE_URL ?? "https://www.willys.se";
 const USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36";
-const MIN_INTERVAL_MS = 1000;
+const MIN_INTERVAL_MS = Number(process.env.WILLYS_MIN_INTERVAL_MS ?? 1000);
 
 export interface Credentials {
   username: string;

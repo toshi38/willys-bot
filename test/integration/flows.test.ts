@@ -1,0 +1,204 @@
+import { strict as assert } from "node:assert";
+import { after, afterEach, before, beforeEach, describe, test } from "node:test";
+import { localDate, nextPickup } from "../../src/plan/week.ts";
+import type { Household } from "../../src/core/household.ts";
+import { goodDraft, SEARCHES, setup, type Env } from "./harness.ts";
+
+// The weekly cycle end to end: the real CLI, database and MCP server against
+// fake Willys, Resend and Slack, with Claude replaced by scripted turns.
+
+const WEEK = localDate(nextPickup({ config: { pickup: { weekdays: ["fri"], earliest: "18:00", latest: "20:00" } } } as unknown as Household));
+const stephen = { email: "stephen@test.example", name: "Stephen" };
+const where = (threadTs: string | null = null) => ({ channel: "C0FOOD", ts: `${Date.now() / 1000}`, threadTs });
+const row = <T>(env: Env, sql: string, ...args: (string | number)[]) => env.db().prepare(sql).get(...args) as T;
+const rows = <T>(env: Env, sql: string, ...args: (string | number)[]) => env.db().prepare(sql).all(...args) as T[];
+
+async function plannedWeek(env: Env): Promise<void> {
+  const milk = await env.wb(["list", "add", "milk", "--qty", "2"]);
+  assert.equal(milk.code, 0, milk.stderr);
+  env.claude([{ calls: SEARCHES, output: goodDraft([1]) }]);
+  const res = await env.wb(["plan"]);
+  assert.equal(res.code, 0, res.stderr);
+}
+
+async function slack(env: Env, req: object): Promise<{ reply?: string }> {
+  const res = await env.wb(["slack"], JSON.stringify(req));
+  assert.equal(res.code, 0, res.stderr);
+  return JSON.parse(res.stdout.trim().split("\n").at(-1)!);
+}
+
+describe("the weekly cycle", () => {
+  let env: Env;
+  beforeEach(async () => {
+    env = await setup();
+    env.willys.setSlots(WEEK, [["16:30", "18:00"], ["18:00", "21:00"]]);
+  });
+  afterEach(() => env.stop());
+
+  test("the scheduled plan drafts the week, emails it and posts it with buttons, once", async () => {
+    await plannedWeek(env);
+    const week = row<{ status: string; token: string }>(env, `SELECT status, token FROM weeks WHERE id = ?`, WEEK);
+    assert.equal(week.status, "open");
+    assert.equal(rows(env, `SELECT * FROM dishes WHERE week_id = ?`, WEEK).length, 2);
+    assert.equal(row<{ source: string }>(env, `SELECT source FROM week_items WHERE product_code = 'MILK_ST'`).source, "request");
+    assert.equal(env.resend.sent.length, 1);
+    assert.match(env.resend.sent[0].subject, new RegExp(`\\[wb:${week.token}\\]`));
+    const plan = env.gateway.posts.find((p) => p.buttons.length);
+    assert.deepEqual(plan?.buttons.map((b) => [b.action, b.value]), [["plan.approve", WEEK], ["plan.skip", WEEK]]);
+    assert.equal(plan?.broadcast, true);
+
+    const again = await env.wb(["plan"]);
+    assert.match(again.stdout, /already open: not drafting it again/);
+    assert.equal(env.resend.sent.length, 1);
+    assert.equal(env.claudeLog().length, 1);
+  });
+
+  test("a placeholder draft is retried once and then nothing is saved or sent", async () => {
+    const placeholder = { summary: "draft", dishes: [], lines: [{ productCode: "960257_PLACEHOLDER", qty: 1, reason: "", dish: 0, listItemIds: [], restocks: "" }], skipped: [], notes: "draft" };
+    env.claude([{ output: placeholder }, { output: placeholder }]);
+    const res = await env.wb(["plan"]);
+    assert.notEqual(res.code, 0);
+    assert.match(res.stderr, /failed its checks twice/);
+    assert.match(env.claudeLog()[1].prompt, /Your previous answer was rejected/);
+    assert.equal(row(env, `SELECT * FROM weeks WHERE id = ?`, WEEK), undefined);
+    assert.equal(env.resend.sent.length, 0);
+    assert.equal(env.gateway.posts.length, 0);
+  });
+
+  test("Approve fills the cart, books the evening slot and confirms it in the channel", async () => {
+    await plannedWeek(env);
+    await slack(env, { type: "action", from: stephen, action: { id: "plan.approve", value: WEEK }, where: where() });
+    assert.deepEqual(Object.fromEntries(env.willys.cart), { CHICKEN_ST: 2, BEEF_ST: 2, BEANS_ST: 2, RICE_ST: 1, MILK_ST: 2 });
+    assert.equal(env.willys.slotInCart, `TEST_Collect_${WEEK}_18:00`);
+    assert.equal(row<{ status: string }>(env, `SELECT status FROM weeks WHERE id = ?`, WEEK).status, "applied");
+    assert.equal(row<{ status: string }>(env, `SELECT status FROM list_items WHERE id = 1`).status, "ordered");
+    const confirm = env.gateway.posts.find((p) => p.text.startsWith("**Pickup booked**"));
+    assert.ok(confirm, "a pickup confirmation is posted");
+    assert.equal(confirm.broadcast, true);
+    assert.match(confirm.text, /18:00-21:00/);
+    assert.ok(env.gateway.posts.some((p) => p.text.startsWith("## Recipes") && p.threadTs));
+    assert.ok(env.resend.sent.some((e) => /Pickup booked/.test(e.text) && /## Recipes/.test(e.text)));
+  });
+
+  test("when no slot can be booked, the filled cart still counts and the channel is told to pick one", async () => {
+    await plannedWeek(env);
+    env.willys.failing.add("/axfood/rest/v2/slot");
+    await slack(env, { type: "action", from: stephen, action: { id: "plan.approve", value: WEEK }, where: where() });
+    assert.equal(env.willys.cart.size, 5);
+    assert.equal(row<{ status: string }>(env, `SELECT status FROM weeks WHERE id = ?`, WEEK).status, "applied");
+    const notice = env.gateway.posts.find((p) => p.text.startsWith("**Order ready, no pickup slot booked**"));
+    assert.equal(notice?.broadcast, true);
+    assert.match(notice?.text ?? "", /Booking the pickup slot failed/);
+  });
+
+  test("when the cart cannot be filled, the week fails, the list items go back and the channel is told", async () => {
+    await plannedWeek(env);
+    env.willys.failing.add("/axfood/rest/cart/addProducts");
+    const res = await slack(env, { type: "action", from: stephen, action: { id: "plan.approve", value: WEEK }, where: where() });
+    assert.deepEqual(res, {});
+    assert.equal(row<{ status: string }>(env, `SELECT status FROM weeks WHERE id = ?`, WEEK).status, "failed");
+    assert.equal(row<{ status: string }>(env, `SELECT status FROM list_items WHERE id = 1`).status, "open");
+    const notice = env.gateway.posts.find((p) => /Filling the cart failed/.test(p.text));
+    assert.equal(notice?.broadcast, true);
+  });
+
+  test("a plain yes by email approves the week it answers", async () => {
+    await plannedWeek(env);
+    const { token } = row<{ token: string }>(env, `SELECT token FROM weeks WHERE id = ?`, WEEK);
+    await env.wb(["inbox"]);
+    env.resend.receive({ id: "m1", from: "Carin <carin@test.example>", subject: `Re: Willys order [wb:${token}]`, text: "Yes!\n\nOn Wed, food-bot wrote:\n> the plan" });
+    const res = await env.wb(["inbox"]);
+    assert.equal(res.code, 0, res.stderr);
+    assert.equal(row<{ decided_by: string }>(env, `SELECT decided_by FROM weeks WHERE id = ?`, WEEK).decided_by, "carin@test.example");
+    assert.equal(env.willys.cart.size, 5);
+    assert.equal(env.claudeLog().length, 1, "no Claude run for a plain yes");
+  });
+
+  test("email from a stranger or an unverified sender changes nothing and gets no answer", async () => {
+    await plannedWeek(env);
+    await env.wb(["inbox"]);
+    const sent = env.resend.sent.length;
+    env.resend.receive({ id: "x1", from: "mallory@evil.test", subject: "yes", text: "yes" });
+    env.resend.receive({ id: "x2", from: "carin@test.example", subject: "yes", text: "yes", authentication: { spf: "fail", dkim: "fail", dmarc: "fail" } });
+    await env.wb(["inbox"]);
+    assert.deepEqual(rows<{ status: string }>(env, `SELECT status FROM mail ORDER BY id`).map((m) => m.status), ["ignored", "ignored"]);
+    assert.equal(env.resend.sent.length, sent);
+    assert.equal(env.willys.cart.size, 0);
+  });
+
+  test("after approval, a change reaches the Willys cart while the order is not placed", async () => {
+    await plannedWeek(env);
+    await slack(env, { type: "action", from: stephen, action: { id: "plan.approve", value: WEEK }, where: where() });
+    const beans = row<{ id: number }>(env, `SELECT id FROM week_items WHERE product_code = 'BEANS_ST'`);
+    env.claude([{ calls: [{ tool: "week_remove_item", args: { itemId: beans.id } }], output: { reply: "Removed the beans.", redraft: "", summary: "removed beans" } }]);
+    const res = await slack(env, { type: "message", from: stephen, text: "remove the beans", where: where(), thread: [] });
+    assert.equal(env.willys.cart.has("BEANS_ST"), false);
+    assert.equal(env.willys.cart.get("CHICKEN_ST"), 2);
+    assert.match(res.reply ?? "", /^Removed the beans\.\n\nWillys cart: 4 products, total /);
+    const run = env.claudeLog().at(-1)!;
+    assert.match(run.prompt, /the order is not placed yet/);
+    assert.equal(run.results[0].error, false);
+  });
+
+  test("after the order is placed, a change is recorded but the order is never touched", async () => {
+    await plannedWeek(env);
+    await slack(env, { type: "action", from: stephen, action: { id: "plan.approve", value: WEEK }, where: where() });
+    env.willys.placeOrder();
+    const before = env.willys.calls.filter((c) => c.path === "/axfood/rest/cart/addProducts").length;
+    const beans = row<{ id: number }>(env, `SELECT id FROM week_items WHERE product_code = 'BEANS_ST'`);
+    env.claude([{ calls: [{ tool: "week_remove_item", args: { itemId: beans.id } }], output: { reply: "Noted.", redraft: "", summary: "removed beans" } }]);
+    const res = await slack(env, { type: "message", from: stephen, text: "remove the beans", where: where(), thread: [] });
+    assert.equal(env.willys.calls.filter((c) => c.path === "/axfood/rest/cart/addProducts").length, before);
+    assert.equal(res.reply, "Noted.");
+    assert.match(env.claudeLog().at(-1)!.prompt, /already placed on willys\.se/);
+  });
+
+  test("Claude is told to answer in the language the member wrote in", async () => {
+    await plannedWeek(env);
+    env.claude([{ output: { reply: "ok", redraft: "", summary: "x" } }, { output: { reply: "ok", redraft: "", summary: "x" } }]);
+    await slack(env, { type: "message", from: stephen, text: "also we want a week of skyr for Kycklinglårfilé fans", where: where(), thread: [{ from: "Carin", text: "Vi behöver mer mjölk och ägg" }] });
+    await slack(env, { type: "message", from: stephen, text: "vi behöver också skyr till fredag", where: where(), thread: [] });
+    const [en, sv] = env.claudeLog().slice(-2);
+    assert.match(en.prompt, /Write your reply in English/);
+    assert.match(sv.prompt, /Write your reply in Swedish/);
+  });
+
+  test("a week nobody decided is closed after its pickup day, and its list items go back on the list", async () => {
+    await plannedWeek(env);
+    const past = localDate(new Date(Date.now() - 3 * 86_400_000));
+    // Move the week into the past; foreign keys are checked at commit.
+    const db = env.db();
+    db.exec("BEGIN; PRAGMA defer_foreign_keys = ON");
+    db.prepare(`UPDATE weeks SET id = ? WHERE id = ?`).run(past, WEEK);
+    db.prepare(`UPDATE week_items SET week_id = ? WHERE week_id = ?`).run(past, WEEK);
+    db.prepare(`UPDATE dishes SET week_id = ? WHERE week_id = ?`).run(past, WEEK);
+    db.prepare(`UPDATE list_items SET plan_id = ? WHERE plan_id = ?`).run(past, WEEK);
+    db.exec("COMMIT");
+    await env.wb(["inbox"]);
+    assert.equal(row<{ status: string; decided_by: string }>(env, `SELECT status, decided_by FROM weeks WHERE id = ?`, past).status, "skipped");
+    assert.equal(row<{ status: string }>(env, `SELECT status FROM list_items WHERE id = 1`).status, "open");
+  });
+
+  test("a failed request in Slack answers with the error instead of going quiet", async () => {
+    await plannedWeek(env);
+    env.claude([{ error: "the model is overloaded", output: null }]);
+    const res = await slack(env, { type: "message", from: stephen, text: "add skyr", where: where(), thread: [] });
+    assert.match(res.reply ?? "", /^Sorry, that went wrong: .*the model is overloaded/);
+    assert.ok(row<{ error: string }>(env, `SELECT error FROM slack_messages ORDER BY id DESC LIMIT 1`).error);
+  });
+});
+
+describe("failure alerts", () => {
+  let env: Env;
+  before(async () => (env = await setup()));
+  after(() => env.stop());
+
+  test("a failed run emails the operator and posts in the channel, at most once every six hours", async () => {
+    const first = await env.wb(["alert", "willys-bot-inbox@test.service"]);
+    assert.equal(first.code, 0, first.stderr);
+    assert.deepEqual(env.resend.sent.map((e) => e.to), [["carin@test.example"]]);
+    assert.ok(env.gateway.posts.some((p) => p.broadcast && /willys-bot-inbox@test\.service failed/.test(p.text)));
+    await env.wb(["alert", "willys-bot-inbox@test.service"]);
+    assert.equal(env.resend.sent.length, 1);
+  });
+});

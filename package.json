@@ -6,7 +6,7 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "test": "node --no-warnings=ExperimentalWarning --test \"src/**/*.test.ts\"",
+    "test": "node --no-warnings=ExperimentalWarning --test \"src/**/*.test.ts\" \"test/**/*.test.ts\"",
     "typecheck": "tsc",
     "wb": "node --no-warnings=ExperimentalWarning src/cli.ts",
     "mcp": "node --no-warnings=ExperimentalWarning src/mcp/server.ts",

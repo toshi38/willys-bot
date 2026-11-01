@@ -1,0 +1,3 @@
+#!/bin/sh
+# Stands in for Claude Code in integration tests; see fake-claude.ts.
+exec node --no-warnings=ExperimentalWarning "$(dirname "$0")/../fake-claude.ts" "$@"
