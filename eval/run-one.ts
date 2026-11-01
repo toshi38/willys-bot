@@ -20,8 +20,19 @@ for (const p of JSON.parse(readFileSync(process.env.EVAL_CATALOG!, "utf8")) as {
 store.setPantryItem({ name: "rice", status: "have", updatedBy: "Carin" });
 store.setPantryItem({ name: "coconut milk", status: "have", updatedBy: "Carin" });
 
-const weekId = localDate(nextPickup(ctx.household));
-if (scenario.week !== "none") {
+const weekId = scenario.week === "past" ? localDate(new Date(Date.now() - 6 * 86_400_000)) : localDate(nextPickup(ctx.household));
+if (scenario.week === "past") {
+  // Last week's shop, ordered and picked up.
+  store.claimWeek(weekId);
+  const r = store.saveRecipe(
+    { name: "Coconut chicken and butternut curry", servings: 6, ingredients: ["1.4 kg chicken thigh fillet", "1 kg butternut squash", "2 tins coconut milk", "2 limes", "ginger, garlic, chili"].join("\n"), method: "1. Brown the chicken. 2. Add the butternut and coconut milk. 3. Simmer 30 minutes, finish with lime." },
+    "planner",
+  );
+  const dish = store.addDish(weekId, { name: "Coconut chicken and butternut curry", portions: 6, why: "Thigh fillet on offer", recipeId: r.id }, "planner");
+  store.addItem(weekId, { productCode: "CHICKEN_THIGH_ST", qty: 2, reason: "For the curry", source: "dish", dishId: dish.id }, "planner");
+  store.updateWeek(weekId, { summary: "Last week.", notes: "" });
+  store.switchWeek(weekId, "drafting", "applied");
+} else if (scenario.week !== "none") {
   store.claimWeek(weekId);
   const dishIds = Object.fromEntries(
     DISHES.map((d) => {
@@ -43,7 +54,7 @@ const snapshot = (): Snapshot => ({
 });
 
 const before = snapshot();
-const week = store.week(weekId);
+const week = scenario.week === "past" ? store.currentWeek(localDate(new Date())) : store.week(weekId);
 const order = scenario.week === "approved" ? { placed: false, closeTime: "Thursday 23:59" } : scenario.week === "placed" ? { placed: true, closeTime: null } : null;
 const started = Date.now();
 let reply = "";

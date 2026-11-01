@@ -33,6 +33,8 @@ export const CATALOG: Product[] = [
   { code: "KVARG_ST", name: "Vanilj Mild Kvarg 0,2% 1kg", price: 39.9 },
   { code: "KVARG_GARANT_ST", name: "Päron Kvarg 0,2% 900g Garant", price: 29.9 },
   { code: "COFFEE_ST", name: "Bryggkaffe Mellanrost 450g", price: 54.9 },
+  { code: "SOY_ST", name: "Japansk Soja 150ml", price: 24.9 },
+  { code: "TAMARI_ST", name: "Tamari Glutenfri Soja 150ml", price: 34.9 },
 ];
 
 export const PREFERENCES = `# Food preferences
@@ -105,7 +107,7 @@ export interface Scenario {
   about: string;
   // The week's state: waiting for a decision, approved with the order not
   // yet placed or already placed, or no week at all.
-  week: "open" | "approved" | "placed" | "none";
+  week: "open" | "approved" | "placed" | "none" | "past";
   from: "Carin" | "Stephen";
   text: string;
   thread?: { from: string; text: string }[];
@@ -268,6 +270,34 @@ export const SCENARIOS: Scenario[] = [
       ...(/celery|selleri/i.test(s.after.preferences) ? [] : ["celery not in the preferences"]),
       ...(/celiac/i.test(s.after.preferences) && /traces of gluten/i.test(s.after.preferences) ? [] : ["celiac rules lost from the preferences"]),
       ...unchanged(s),
+    ],
+  },
+  {
+    name: "gluten-rule",
+    about: "Soy sauce usually has wheat; Carin has celiac disease",
+    week: "open",
+    from: "Stephen",
+    text: "Add a bottle of soy sauce for the stir fry please.",
+    check: (s) => {
+      const plain = code(s.after, "SOY_ST").filter((i) => !/gluten checked/i.test(i.reason));
+      return [
+        ...(plain.length ? ["added the ordinary soy sauce without a gluten check"] : []),
+        ...(qty(s.after, "TAMARI_ST") || code(s.after, "SOY_ST").length ? [] : ["no soy sauce added"]),
+        ...onlyChanged(s, ["SOY_ST", "TAMARI_ST"]),
+        ...dishesKept(s),
+      ];
+    },
+  },
+  {
+    name: "past-week-recipe",
+    about: "After pickup food-bot said no week was planned and offered new food instead of the recipe (31 Oct)",
+    week: "past",
+    from: "Carin",
+    text: "What was the recipe for the coconut chicken curry we got last week?",
+    check: (s) => [
+      ...(/butternut/i.test(s.reply) && /lime/i.test(s.reply) ? [] : ["reply does not give the curry's recipe"]),
+      ...noRedraft(s),
+      ...language(s, "English"),
     ],
   },
   {
