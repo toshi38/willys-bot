@@ -110,6 +110,13 @@ export class WillysClient {
     return this.json(`/search/clean?${q}`);
   }
 
+  // A product's brand and category path, from its product page.
+  async productDetails(code: string): Promise<{ brand: string | null; category: string }> {
+    const p = await this.json<{ manufacturer?: string | null; breadCrumbs?: { name: string; categoryCode?: string | null }[] }>(`/axfood/rest/p/${encodeURIComponent(code)}`);
+    const path = (p.breadCrumbs ?? []).filter((b) => b.categoryCode && b.categoryCode !== "N00").map((b) => b.name);
+    return { brand: p.manufacturer ?? null, category: path.join(" > ") };
+  }
+
   // Current promotions for a store: "online" are the ones that apply to
   // online orders, "offline" the in-store flyer.
   // In-store offers come without a product code or numeric price on the

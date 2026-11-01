@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Context } from "../core/context.ts";
 import { judgePrice, recordSearchResults } from "../core/prices.ts";
 import { savePreferences } from "../core/household.ts";
-import { avoidedBrand, glutenRisk, ruleProblems } from "../core/rules.ts";
+import { brokenRule, glutenRisk, needsCategory, productFacts, ruleProblems, type ProductFacts } from "../core/rules.ts";
 import { editable, localDate } from "../plan/week.ts";
 import type { PantryStatus, Store, Week, WeekStatus } from "../core/store.ts";
 
@@ -174,7 +174,7 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
       const dish = dishId !== undefined ? store.dish(dishId) : null;
       if (dishId !== undefined && (dish?.weekId !== w.id || dish.removedAt)) throw new Error(`Dish ${dishId} is not in this week`);
       if (restocks && !store.pantryItems().some((p) => p.name === restocks)) throw new Error(`No pantry entry named "${restocks}": use the exact name from pantry_view`);
-      const problems = ruleProblems(household, { code: productCode, name: store.productName(productCode)!, brand: store.productBrand(productCode) }, reason);
+      const problems = ruleProblems(household, (await productFacts(ctx, productCode))!, reason);
       if (problems.length) throw new Error(problems.join(" "));
       const item = store.addItem(
         w.id,
@@ -328,14 +328,25 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
       const res = await willys.search(query, 0, limit);
       recordSearchResults(store, res.results);
       // Products the household's rules flag come last, marked, so the model
-      // sees the alternatives first.
-      const flagged = (p: (typeof res.results)[number]) => ruleProblems(household, { code: p.code, name: p.name, brand: p.manufacturer });
+      // sees the alternatives first. Categories are looked up only for the
+      // few products a category rule could apply to.
+      const facts = new Map<string, ProductFacts>();
+      let lookups = 0;
+      for (const p of res.results) {
+        const known: ProductFacts = { code: p.code, name: p.name, brand: p.manufacturer ?? store.productBrand(p.code), category: store.productCategory(p.code) ?? undefined };
+        facts.set(p.code, needsCategory(household, known) && lookups++ < 5 ? ((await productFacts(ctx, p.code).catch(() => null)) ?? known) : known);
+      }
+      const avoid = (code: string) => {
+        const rule = brokenRule(household, facts.get(code)!);
+        return rule ? [rule.brand, rule.name, rule.category && `in ${rule.category}`, rule.product].filter(Boolean).join(" ") : null;
+      };
+      const flagged = (p: (typeof res.results)[number]) => !!avoid(p.code) || !!glutenRisk(household, p.name);
       return text(
-        [...res.results].sort((a, b) => Number(flagged(a).length > 0) - Number(flagged(b).length > 0)).map((p) => ({
+        [...res.results].sort((a, b) => Number(flagged(a)) - Number(flagged(b))).map((p) => ({
           code: p.code,
           name: p.name,
           brand: p.manufacturer,
-          ...(avoidedBrand(household, { name: p.name, brand: p.manufacturer }) ? { avoidedBrand: true } : {}),
+          ...(avoid(p.code) ? { avoid: avoid(p.code) } : {}),
           ...(glutenRisk(household, p.name) ? { mayContainGluten: true } : {}),
           size: p.displayVolume,
           price: p.priceValue,

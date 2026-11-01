@@ -1,31 +1,82 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
+import type { Context } from "./context.ts";
 import type { Household } from "./household.ts";
-import { avoidedBrand, glutenRisk, ruleProblems } from "./rules.ts";
+import { brokenRule, glutenRisk, needsCategory, productFacts, ruleProblems } from "./rules.ts";
+import { Store } from "./store.ts";
 
-const household = { config: { rules: { avoidBrands: ["Garant", "Eldorado"], glutenFree: true, staples: [] } } } as unknown as Household;
+const household = (avoid: object[] = [], avoidBrands: string[] = []) =>
+  ({ config: { rules: { avoidBrands, avoid, glutenFree: true, staples: [] } } }) as unknown as Household;
 
-test("an avoided brand is found by brand or by name, in any case", () => {
-  assert.equal(avoidedBrand(household, { name: "Päron Kvarg 900g", brand: "Garant" }), "Garant");
-  assert.equal(avoidedBrand(household, { name: "ELDORADO Krossade tomater" }), "Eldorado");
-  assert.equal(avoidedBrand(household, { name: "Vanilj Mild Kvarg 1kg", brand: "Arla" }), null);
+const SPICES = "Skafferi > Kryddor & smaksättare > Kryddor";
+const grill = { code: "E1_ST", name: "Grillkrydda Påse", brand: "Eldorado", category: SPICES };
+const tomatoes = { code: "E2_ST", name: "Krossade Tomater", brand: "Eldorado", category: "Skafferi > Konserver" };
+
+test("a whole brand is avoided by brand or by name, in any case; avoidBrands is shorthand for it", () => {
+  const h = household([], ["Garant"]);
+  assert.ok(brokenRule(h, { code: "G", name: "Päron Kvarg 900g", brand: "GARANT" }));
+  assert.ok(brokenRule(h, { code: "G", name: "Garant Krossade tomater" }));
+  assert.equal(brokenRule(h, { code: "A", name: "Vanilj Mild Kvarg", brand: "Arla" }), null);
 });
 
-test("gluten words are flagged unless the product is labelled gluten free", () => {
-  for (const name of ["Vetemjöl 2kg", "Spaghetti 500g", "Rågbröd", "Japansk Soja 150ml", "Äggnudlar 250g", "Couscous"]) assert.ok(glutenRisk(household, name), name);
-  for (const name of ["Glutenfri Pasta Penne", "Mellanmjölk Laktosfri 1,5l", "Kokosmjölk 400ml", "Risnudlar 250g", "Majskorn 3-pack", "Potatismjöl", "Kycklinglårfilé 700g"]) assert.equal(glutenRisk(household, name), null, name);
+test("a brand can be avoided in one category only, named in Swedish or in English", () => {
+  for (const category of ["spices", "Kryddor"]) {
+    const h = household([{ brand: "Eldorado", category }]);
+    assert.ok(brokenRule(h, grill), category);
+    assert.equal(brokenRule(h, tomatoes), null, category);
+  }
 });
 
-test("households without the gluten rule get no gluten flags", () => {
-  const any = { config: { rules: { avoidBrands: [], glutenFree: false, staples: [] } } } as unknown as Household;
+test("a rule on a category waits for the category, and needs it only when the rest matches", () => {
+  const h = household([{ brand: "Eldorado", category: "spices" }]);
+  const unknown = { ...grill, category: undefined };
+  assert.equal(needsCategory(h, unknown), true);
+  assert.equal(brokenRule(h, unknown), null);
+  assert.equal(needsCategory(h, { code: "A", name: "Kanel Malen", brand: "Santa Maria" }), false);
+});
+
+test("a rule can name words in the product, one product code, or both a brand and words", () => {
+  const h = household([{ brand: "Garant", name: "crème fraiche" }, { product: "X_ST" }]);
+  assert.ok(brokenRule(h, { code: "G1", name: "Crème Fraiche 34%", brand: "Garant" }));
+  assert.equal(brokenRule(h, { code: "G2", name: "Crème Fraiche 34%", brand: "Arla" }), null);
+  assert.equal(brokenRule(h, { code: "G3", name: "Gräddfil", brand: "Garant" }), null);
+  assert.ok(brokenRule(h, { code: "X_ST", name: "Anything" }));
+});
+
+test("a stated exception passes a rule, except a strict one, which wins over a lenient rule", () => {
+  const h = household([{ brand: "Garant" }, { brand: "Garant", name: "crème fraiche", strict: true, note: "Carin dislikes it" }]);
+  const kvarg = { code: "G1", name: "Päron Kvarg", brand: "Garant" };
+  const cf = { code: "G2", name: "Crème Fraiche 34%", brand: "Garant" };
+  assert.match(ruleProblems(h, kvarg, "cheap").join(" "), /avoid Garant/);
+  assert.deepEqual(ruleProblems(h, kvarg, "Brand exception: every other kvarg costs more than double"), []);
+  const strict = ruleProblems(h, cf, "Brand exception: only one in stock").join(" ");
+  assert.match(strict, /allows no exception/);
+  assert.match(strict, /Carin dislikes it/);
+});
+
+test("gluten words are flagged unless the product is labelled gluten free, and only for gluten-free households", () => {
+  const h = household();
+  for (const name of ["Vetemjöl 2kg", "Spaghetti 500g", "Rågbröd", "Japansk Soja 150ml", "Äggnudlar 250g", "Couscous"]) assert.ok(glutenRisk(h, name), name);
+  for (const name of ["Glutenfri Pasta Penne", "Mellanmjölk Laktosfri 1,5l", "Kokosmjölk 400ml", "Risnudlar 250g", "Majskorn 3-pack", "Potatismjöl"]) assert.equal(glutenRisk(h, name), null, name);
+  const any = { config: { rules: { avoidBrands: [], avoid: [], glutenFree: false, staples: [] } } } as unknown as Household;
   assert.equal(glutenRisk(any, "Spaghetti"), null);
+  assert.match(ruleProblems(h, { code: "S", name: "Japansk Soja" }, "stir fry").join(" "), /contains gluten \("soja"\)/);
+  assert.deepEqual(ruleProblems(h, { code: "S", name: "Japansk Soja" }, "Gluten checked: labelled tamari"), []);
 });
 
-test("a stated exception lets a flagged product through, and nothing else does", () => {
-  const garant = { code: "G_ST", name: "Päron Kvarg 900g", brand: "Garant" };
-  assert.match(ruleProblems(household, garant, "cheapest kvarg").join(" "), /brand the household avoids/);
-  assert.deepEqual(ruleProblems(household, garant, "Brand exception: every other kvarg costs more than double"), []);
-  const soy = { code: "S_ST", name: "Japansk Soja 150ml" };
-  assert.match(ruleProblems(household, soy, "for the stir fry").join(" "), /contains gluten \("soja"\)/);
-  assert.deepEqual(ruleProblems(household, soy, "Gluten checked: labelled tamari, made without wheat"), []);
+test("a product's category is looked up on willys.se once, when a rule needs it", async () => {
+  const store = new Store(":memory:");
+  store.recordProduct({ code: "E1_ST", name: "Grillkrydda Påse", priceValue: 19.9 }, "regular");
+  const lookups: string[] = [];
+  const willys = { productDetails: async (code: string) => (lookups.push(code), { brand: "Eldorado", category: SPICES }) };
+  const ctx = { store, willys, household: household([{ brand: "Eldorado", category: "spices" }]) } as unknown as Context;
+  // The brand is only in the product page here, so the category is needed
+  // once the brand is known; a name match is enough to start the lookup.
+  store.setProductDetails("E1_ST", { brand: "Eldorado", category: null as unknown as string });
+  const first = await productFacts(ctx, "E1_ST");
+  const second = await productFacts(ctx, "E1_ST");
+  assert.deepEqual(lookups, ["E1_ST"]);
+  assert.equal(first?.category, SPICES);
+  assert.equal(second?.category, SPICES);
+  assert.ok(brokenRule(ctx.household, second!));
 });

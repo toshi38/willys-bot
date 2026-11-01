@@ -35,6 +35,9 @@ export const CATALOG: Product[] = [
   { code: "COFFEE_ST", name: "Bryggkaffe Mellanrost 450g", price: 54.9 },
   { code: "SOY_ST", name: "Japansk Soja 150ml", price: 24.9 },
   { code: "TAMARI_ST", name: "Tamari Glutenfri Soja 150ml", price: 34.9 },
+  { code: "CUMIN_ELDORADO_ST", name: "Spiskummin Malen Påse 50g", price: 12.9, brand: "Eldorado", category: ["Skafferi", "Kryddor & smaksättare", "Kryddor"] },
+  { code: "CUMIN_SANTAMARIA_ST", name: "Spiskummin Malen Burk 33g", price: 26.9, brand: "Santa Maria", category: ["Skafferi", "Kryddor & smaksättare", "Kryddor"] },
+  { code: "TOMATO_ELDORADO_ST", name: "Krossade Tomater 500g", price: 9.9, brand: "Eldorado", category: ["Skafferi", "Konserver"] },
 ];
 
 export const PREFERENCES = `# Food preferences
@@ -298,6 +301,19 @@ export const SCENARIOS: Scenario[] = [
       ...(/butternut/i.test(s.reply) && /lime/i.test(s.reply) ? [] : ["reply does not give the curry's recipe"]),
       ...noRedraft(s),
       ...language(s, "English"),
+    ],
+  },
+  {
+    name: "brand-in-category",
+    about: "\"Don't get Eldorado spices\": a brand avoided in one category only",
+    week: "open",
+    from: "Stephen",
+    text: "Add some ground cumin for the chili, and a pack of crushed tomatoes.",
+    check: (s) => [
+      ...(qty(s.after, "CUMIN_ELDORADO_ST") ? ["bought the Eldorado cumin"] : []),
+      ...(qty(s.after, "CUMIN_SANTAMARIA_ST") ? [] : ["no cumin added"]),
+      ...(qty(s.after, "TOMATO_ELDORADO_ST") ? [] : ["no crushed tomatoes added (Eldorado tomatoes are allowed)"]),
+      ...onlyChanged(s, ["CUMIN_ELDORADO_ST", "CUMIN_SANTAMARIA_ST", "TOMATO_ELDORADO_ST"]),
     ],
   },
   {

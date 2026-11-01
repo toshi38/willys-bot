@@ -54,14 +54,33 @@ export const HouseholdConfig = z.object({
   // decides (see core/rules.ts), and standing orders added to every week.
   rules: z
     .object({
-      // Brands bought only with a stated exception, e.g. ["Garant", "Eldorado"].
+      // Brands avoided everywhere, e.g. ["Garant"]: shorthand for avoid
+      // rules with only a brand.
       avoidBrands: z.array(z.string()).default([]),
+      // Products bought only with a stated exception. Every field a rule
+      // gives must match: a brand, words in the product name, a category
+      // (Willys's, in Swedish or a few English words like "spices"), or one
+      // product code. Strict rules allow no exception.
+      avoid: z
+        .array(
+          z
+            .object({
+              brand: z.string().optional(),
+              name: z.string().optional(),
+              category: z.string().optional(),
+              product: z.string().optional(),
+              strict: z.boolean().default(false),
+              note: z.string().optional(),
+            })
+            .refine((r) => r.brand || r.name || r.category || r.product, "an avoid rule needs a brand, name, category or product"),
+        )
+        .default([]),
       // Products that look like they contain gluten need a stated check.
       glutenFree: z.boolean().default(false),
       // Bought every week unless a member removes them that week.
       staples: z.array(z.object({ name: z.string(), productCode: z.string(), qty: z.number().int().min(1).max(50) })).default([]),
     })
-    .default({ avoidBrands: [], glutenFree: false, staples: [] }),
+    .default({ avoidBrands: [], avoid: [], glutenFree: false, staples: [] }),
   plan: z.object({
     // Batch-cooked dishes per week and portions of each; a household that
     // cooks every night uses one portion count per dinner instead.

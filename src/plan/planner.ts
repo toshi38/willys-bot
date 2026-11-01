@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { runClaude } from "../core/claude.ts";
 import type { Context } from "../core/context.ts";
-import { ruleProblems } from "../core/rules.ts";
+import { needsCategory, productFacts, ruleProblems } from "../core/rules.ts";
 import type { ListItem, WeekItem } from "../core/store.ts";
 
 // The week's first draft, made by headless Claude Code (`claude -p`) on the
@@ -190,6 +190,8 @@ export async function makeDraft(ctx: Context, weekId: string, input: DraftInput)
       readOnly: true,
     });
     const parsed = DraftOutput.safeParse(output);
+    // Rules on categories need the products' categories, looked up once.
+    if (parsed.success) for (const l of parsed.data.lines) await productFacts(ctx, l.productCode).catch(() => null);
     const problems = parsed.success ? checkDraft(ctx, parsed.data, input) : [`The answer did not match the schema: ${parsed.error.message.slice(0, 300)}`];
     if (!problems.length && parsed.success) return parsed.data;
     if (attempt >= 2) throw new Error(`The planner's draft failed its checks twice: ${problems.join("; ")}`);
@@ -212,7 +214,11 @@ export function checkDraft(ctx: Context, d: Draft, input: DraftInput): string[] 
   for (const l of d.lines) {
     const name = ctx.store.productName(l.productCode);
     if (!name || ctx.store.latestPrice(l.productCode) === null) problems.push(`Product ${l.productCode} is unknown: use a code from search_products or the offers.`);
-    else problems.push(...ruleProblems(ctx.household, { code: l.productCode, name, brand: ctx.store.productBrand(l.productCode) }, l.reason));
+    else {
+      const facts = { code: l.productCode, name, brand: ctx.store.productBrand(l.productCode), category: ctx.store.productCategory(l.productCode) ?? undefined };
+      if (needsCategory(ctx.household, facts)) problems.push(`Could not look up the category of ${name} (${l.productCode}) to check the household's rules: pick another product.`);
+      else problems.push(...ruleProblems(ctx.household, facts, l.reason));
+    }
     if (l.dish < 0 || l.dish > d.dishes.length) problems.push(`Line ${l.productCode} points at dish ${l.dish}, which does not exist.`);
   }
   const budget = ctx.household.config.plan.budgetSek;

@@ -200,6 +200,9 @@ export class Store {
         manufacturer TEXT,
         volume TEXT,
         compare_unit TEXT,
+        -- Willys's category path, "Skafferi > Kryddor & smaksättare > Kryddor",
+        -- fetched when a rule needs it.
+        category TEXT,
         last_seen TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS prices (
@@ -313,6 +316,9 @@ export class Store {
         value TEXT NOT NULL
       );
     `);
+    // Columns added after a table was first created.
+    const has = (table: string, column: string) => this.#db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+    if (!has("products", "category")) this.#db.exec(`ALTER TABLE products ADD COLUMN category TEXT`);
   }
 
   close(): void {
@@ -431,7 +437,7 @@ export class Store {
     this.#db
       .prepare(
         `INSERT INTO products (code, name, manufacturer, volume, compare_unit, last_seen) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (code) DO UPDATE SET name = excluded.name, manufacturer = excluded.manufacturer,
+         ON CONFLICT (code) DO UPDATE SET name = excluded.name, manufacturer = coalesce(excluded.manufacturer, products.manufacturer),
            volume = excluded.volume, compare_unit = excluded.compare_unit, last_seen = excluded.last_seen`,
       )
       .run(p.code, p.name, p.manufacturer ?? null, p.displayVolume ?? null, p.comparePriceUnit ?? null, observedOn);
@@ -512,6 +518,16 @@ export class Store {
       )
       .get(code, code);
     return r && r.price !== null ? Number(r.price) : null;
+  }
+
+  // The product's category path, or null when not fetched yet.
+  productCategory(code: string): string | null {
+    const r = this.#db.prepare(`SELECT category FROM products WHERE code = ?`).get(code);
+    return r ? ((r.category as string | null) ?? null) : null;
+  }
+
+  setProductDetails(code: string, details: { brand: string | null; category: string }): void {
+    this.#db.prepare(`UPDATE products SET manufacturer = coalesce(?, manufacturer), category = ? WHERE code = ?`).run(details.brand, details.category, code);
   }
 
   productBrand(code: string): string | null {

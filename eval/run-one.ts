@@ -14,8 +14,8 @@ if (!scenario) throw new Error(`No scenario ${name}`);
 
 const ctx = openContext("eval");
 const { store } = ctx;
-for (const p of JSON.parse(readFileSync(process.env.EVAL_CATALOG!, "utf8")) as { code: string; name: string; price: number }[]) {
-  store.recordProduct({ code: p.code, name: p.name, priceValue: p.price, displayVolume: "" }, "regular");
+for (const p of JSON.parse(readFileSync(process.env.EVAL_CATALOG!, "utf8")) as { code: string; name: string; price: number; brand?: string }[]) {
+  store.recordProduct({ code: p.code, name: p.name, manufacturer: p.brand, priceValue: p.price, displayVolume: "" }, "regular");
 }
 store.setPantryItem({ name: "rice", status: "have", updatedBy: "Carin" });
 store.setPantryItem({ name: "coconut milk", status: "have", updatedBy: "Carin" });

@@ -63,7 +63,7 @@ async function runOne(name: string, n: number): Promise<Result> {
       ],
       mail: { address: "food@test.example", name: "food-bot", secret: "eval-resend" },
       plan: { meals: 3, portionsPerMeal: 6, people: 2, budgetSek: 1200, language: "en" },
-      rules: { avoidBrands: ["Garant", "Eldorado"], glutenFree: true, staples: [] },
+      rules: { avoidBrands: ["Garant"], avoid: [{ brand: "Eldorado", category: "spices", strict: true }], glutenFree: true, staples: [] },
     }),
   );
   writeFileSync(join(households, "eval", "preferences.md"), PREFERENCES);
