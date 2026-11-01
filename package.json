@@ -6,6 +6,7 @@
     "node": ">=22.18"
   },
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
     "test": "node --no-warnings=ExperimentalWarning --test \"src/**/*.test.ts\" \"test/**/*.test.ts\"",
     "typecheck": "tsc",
     "wb": "node --no-warnings=ExperimentalWarning src/cli.ts",
