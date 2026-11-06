@@ -250,6 +250,9 @@ export async function setup(opts: { slack?: boolean; meals?: number; rules?: obj
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: `${join(ROOT, "test/integration/bin")}:${process.env.PATH}`,
+    // Every process the test starts sees the same moment (clock.ts).
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${join(ROOT, "test/integration/clock.ts")}`.trim(),
+    WILLYS_BOT_TEST_CLOCK: "1",
     WILLYS_BOT_HOUSEHOLD: HOUSEHOLD,
     WILLYS_BOT_HOUSEHOLDS: households,
     WILLYS_BOT_DATA: data,

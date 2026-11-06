@@ -2,12 +2,15 @@ import { strict as assert } from "node:assert";
 import { after, afterEach, before, beforeEach, describe, test } from "node:test";
 import { localDate, nextPickup } from "../../src/plan/week.ts";
 import type { Household } from "../../src/core/household.ts";
+import { NOW } from "./clock.ts";
 import { goodDraft, SEARCHES, setup, type Env } from "./harness.ts";
 
 // The weekly cycle end to end: the real CLI, database and MCP server against
 // fake Willys, Resend and Slack, with Claude replaced by scripted turns.
+// The processes they start run at NOW (clock.ts), so the week is the same
+// whatever day the tests run on.
 
-const WEEK = localDate(nextPickup({ config: { pickup: { weekdays: ["fri"], earliest: "18:00", latest: "20:00" } } } as unknown as Household));
+const WEEK = localDate(nextPickup({ config: { pickup: { weekdays: ["fri"], earliest: "18:00", latest: "20:00" } } } as unknown as Household, NOW));
 const stephen = { email: "stephen@test.example", name: "Stephen" };
 const where = (threadTs: string | null = null) => ({ channel: "C0FOOD", ts: `${Date.now() / 1000}`, threadTs });
 const row = <T>(env: Env, sql: string, ...args: (string | number)[]) => env.db().prepare(sql).get(...args) as T;
@@ -165,7 +168,7 @@ describe("the weekly cycle", () => {
 
   test("a week nobody decided is closed after its pickup day, and its list items go back on the list", async () => {
     await plannedWeek(env);
-    const past = localDate(new Date(Date.now() - 3 * 86_400_000));
+    const past = localDate(new Date(NOW.getTime() - 3 * 86_400_000));
     // Move the week into the past; foreign keys are checked at commit.
     const db = env.db();
     db.exec("BEGIN; PRAGMA defer_foreign_keys = ON");
