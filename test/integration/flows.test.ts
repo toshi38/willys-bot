@@ -201,6 +201,22 @@ describe("failure alerts", () => {
     await env.wb(["alert", "willys-bot-inbox@test.service"]);
     assert.equal(env.resend.sent.length, 1);
   });
+
+  test("when systemd does not name the failed unit, the alert looks up the household's failed units", async () => {
+    env.resend.sent.length = 0;
+    env.failedUnits(["willys-bot-plan@test.service", "willys-bot-snapshot@test.service", "willys-bot-alert@test.service", "willys-bot-plan@other.service"]);
+    const res = await env.wb(["alert"]);
+    assert.equal(res.code, 0, res.stderr);
+    assert.deepEqual(env.resend.sent.map((e) => e.subject), ["food-bot: willys-bot-plan@test.service failed", "food-bot: willys-bot-snapshot@test.service failed"]);
+  });
+
+  test("when no failed unit can be found, the operator still hears that a run failed", async () => {
+    env.resend.sent.length = 0;
+    env.failedUnits([]);
+    const res = await env.wb(["alert"]);
+    assert.equal(res.code, 0, res.stderr);
+    assert.deepEqual(env.resend.sent.map((e) => e.subject), ["food-bot: a food-bot run failed"]);
+  });
 });
 
 describe("standing orders", () => {

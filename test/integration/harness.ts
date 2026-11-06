@@ -202,6 +202,8 @@ export interface Env {
   db: () => DatabaseSync;
   // Runs `wb <args>` like the timers do; stdin for the slack command.
   wb: (args: string[], stdin?: string) => Promise<{ code: number; stdout: string; stderr: string }>;
+  // Sets which units the stand-in systemctl reports as failed.
+  failedUnits: (units: string[]) => void;
   // Sets what the stand-in Claude does on its next runs.
   claude: (turns: Turn[]) => void;
   // What the stand-in Claude was asked, run by run.
@@ -258,6 +260,8 @@ export async function setup(opts: { slack?: boolean; meals?: number; rules?: obj
     SLACK_GATEWAY_SOCKET: opts.slack === false ? join(dir, "no-gateway.sock") : gateway.socket,
     FAKE_CLAUDE_SCRIPT: script,
     FAKE_CLAUDE_LOG: log,
+    FAKE_SYSTEMCTL_FAILED: join(dir, "failed-units"),
+    MONITOR_UNIT: "",
   };
   return {
     willys,
@@ -272,6 +276,7 @@ export async function setup(opts: { slack?: boolean; meals?: number; rules?: obj
         );
         child.stdin?.end(stdin ?? "");
       }),
+    failedUnits: (units) => writeFileSync(join(dir, "failed-units"), units.join("\n")),
     claude: (turns) => {
       writeFileSync(script, JSON.stringify(turns));
       writeFileSync(`${script}.next`, "0");

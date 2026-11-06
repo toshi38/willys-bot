@@ -69,6 +69,50 @@ async function main(): Promise<void> {
   }
 }
 
+// This household's food-bot units that systemd reports as failed, other
+// than the alert itself.
+function failedUnits(householdId: string): string[] {
+  let out = "";
+  try {
+    out = execFileSync("systemctl", ["--user", "list-units", "--failed", "--plain", "--no-legend", `willys-bot-*@${householdId}.service`], { encoding: "utf8" });
+  } catch {
+    return [];
+  }
+  return out
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/)[0])
+    .filter((unit) => unit && !unit.startsWith("willys-bot-alert@"));
+}
+
+// Emails the operator and posts in the channel that `unit` failed ("" when
+// it is not known which), at most once every six hours for each unit.
+async function alertAbout(ctx: Context, unit: string): Promise<void> {
+  const { store, household } = ctx;
+  const what = unit || "a food-bot run";
+  const key = `alert.${unit || "unknown"}`;
+  const last = store.get(key);
+  if (last && Date.now() - new Date(last).getTime() < 6 * 3_600_000) {
+    console.log(`Already alerted about ${what} at ${last}`);
+    return;
+  }
+  let log = "";
+  try {
+    log = execFileSync("journalctl", ["--user", "-u", unit || `willys-bot-*@${household.id}.service`, "-n", unit ? "30" : "60", "--no-pager", "-o", "short-iso"], { encoding: "utf8" });
+  } catch {
+    log = "(could not read the journal)";
+  }
+  const operator = household.config.operator ?? household.config.members[0].email;
+  const lines = unit ? "Its last log lines" : "systemd did not say which unit it was. The last log lines of all of them";
+  await sendToMembers(household, {
+    to: [operator],
+    subject: `food-bot: ${what} failed`,
+    markdown: `${what} failed on ${hostname()}. ${lines}:\n\n\`\`\`\n${log.trim()}\n\`\`\`\n\nYou get this at most once every six hours for ${unit ? "this unit" : "an unnamed failure"}.`,
+  });
+  await toSlack(() => postToWeek(ctx, `**food-bot: ${what} failed** on ${hostname()}. ${operator} has the log by email.`, { broadcast: true }));
+  store.set(key, new Date().toISOString());
+  console.log(`Alerted ${operator} about ${what}`);
+}
+
 async function run(ctx: Context, command: string, rest: string[], values: Record<string, string | boolean | undefined>): Promise<void> {
   const { store, willys, household } = ctx;
   switch (command) {
@@ -182,29 +226,15 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
       return;
     }
     case "alert": {
-      const unit = rest[0] ?? process.env.MONITOR_UNIT;
-      if (!unit) throw new Error("alert needs the failed unit's name");
-      const key = `alert.${unit}`;
-      const last = store.get(key);
-      if (last && Date.now() - new Date(last).getTime() < 6 * 3_600_000) {
-        console.log(`Already alerted about ${unit} at ${last}`);
-        return;
-      }
-      let log = "";
-      try {
-        log = execFileSync("journalctl", ["--user", "-u", unit, "-n", "30", "--no-pager", "-o", "short-iso"], { encoding: "utf8" });
-      } catch {
-        log = "(could not read the journal)";
-      }
-      const operator = household.config.operator ?? household.config.members[0].email;
-      await sendToMembers(household, {
-        to: [operator],
-        subject: `food-bot: ${unit} failed`,
-        markdown: `${unit} failed on ${hostname()}. Its last log lines:\n\n\`\`\`\n${log.trim()}\n\`\`\`\n\nYou get this at most once every six hours for this unit.`,
-      });
-      await toSlack(() => postToWeek(ctx, `**food-bot: ${unit} failed** on ${hostname()}. ${operator} has the log by email.`, { broadcast: true }));
-      store.set(key, new Date().toISOString());
-      console.log(`Alerted ${operator} about ${unit}`);
+      // systemd names the failed unit in MONITOR_UNIT, but leaves it unset
+      // when it cannot tell which unit set the alert off (several of the
+      // household's units had failed). Then the failed units are looked up,
+      // and if none can be found the operator still hears that something
+      // failed.
+      const named = rest[0] ?? process.env.MONITOR_UNIT;
+      const units = named ? [named] : failedUnits(household.id);
+      if (units.length === 0) units.push("");
+      for (const unit of units) await alertAbout(ctx, unit);
       return;
     }
     case "book-slot": {

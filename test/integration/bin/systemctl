@@ -1,0 +1,11 @@
+#!/bin/sh
+# Stands in for systemctl in integration tests: `list-units --failed <pattern>`
+# lists the units in $FAKE_SYSTEMCTL_FAILED (one per line) that match the
+# pattern, the way systemctl does.
+for pattern; do :; done
+[ -f "$FAKE_SYSTEMCTL_FAILED" ] || exit 0
+while read -r unit || [ -n "$unit" ]; do
+  case "$unit" in
+    $pattern) printf '%s loaded failed failed food-bot: a unit\n' "$unit" ;;
+  esac
+done < "$FAKE_SYSTEMCTL_FAILED"
