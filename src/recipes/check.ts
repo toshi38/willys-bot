@@ -81,8 +81,10 @@ export function lateHeat(r: Recipe, t: Timeline): { step: string; minutes: numbe
 const NEEDS_TIMER: Step["kind"][] = ["preheat", "simmer", "bake", "rest"];
 
 // What is wrong with a recipe, each problem a sentence the planner can act
-// on. An empty list means it is fine to save and show.
-export function recipeProblems(input: unknown): string[] {
+// on. An empty list means it is fine to save and show. Without timing, the
+// order of the steps is not judged (idle waits, parts ready early, cutting
+// before the heat), only whether the recipe is complete and consistent.
+export function recipeProblems(input: unknown, { timing = true }: { timing?: boolean } = {}): string[] {
   const parsed = Recipe.safeParse(input);
   if (!parsed.success) return parsed.error.issues.map((i) => `${i.path.join(".") || "recipe"}: ${i.message}`);
   const r = parsed.data;
@@ -120,7 +122,7 @@ export function recipeProblems(input: unknown): string[] {
     if (!used.has(i.id)) problems.push(`Ingredient ${i.id} is not used by any step.`);
     else if (i.qty !== undefined && used.get(i.id)! > i.qty * 1.01) problems.push(`The steps' partial amounts of ${i.id} add up to ${used.get(i.id)}, more than the ingredient list has (${i.qty}).`);
   }
-  if (!problems.length) {
+  if (!problems.length && timing) {
     const t = timeline(r);
     for (const w of t.idle) {
       problems.push(`Step ${w.step} waits ${w.minutes} minutes for ${w.waitsFor} while nothing else happens: move step ${w.couldDo} into that wait.`);

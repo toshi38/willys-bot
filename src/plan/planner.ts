@@ -235,6 +235,10 @@ export async function makeDraft(ctx: Context, weekId: string, input: DraftInput)
     if (parsed.success) for (const l of parsed.data.lines) await productFacts(ctx, l.productCode).catch(() => null);
     const problems = parsed.success ? checkDraft(ctx, parsed.data, input) : [`The answer did not match the schema: ${parsed.error.message.slice(0, 300)}`];
     if (!problems.length && parsed.success) return parsed.data;
+    // The last try is taken with recipes whose steps could be ordered
+    // better: a week with a rice pot started a few minutes early beats no
+    // week at all.
+    if (attempt >= 3 && parsed.success && !checkDraft(ctx, parsed.data, input, { timing: false }).length) return parsed.data;
     if (attempt >= 3) throw new Error(`The planner's draft failed its checks three times: ${problems.join("; ")}`);
     prompt = `${buildPrompt(ctx, weekId, input)}\n\n## Your previous answer was rejected\n${problems.map((p) => `- ${p}`).join("\n")}\nPlan the whole week again and fix these.`;
   }
@@ -242,7 +246,7 @@ export async function makeDraft(ctx: Context, weekId: string, input: DraftInput)
 
 // What is wrong with a draft, if anything: the checks that keep a broken
 // or half-finished plan from reaching the household.
-export function checkDraft(ctx: Context, d: Draft, input: DraftInput): string[] {
+export function checkDraft(ctx: Context, d: Draft, input: DraftInput, { timing = true }: { timing?: boolean } = {}): string[] {
   const problems: string[] = [];
   const want = dishesWanted(ctx, input);
   if (/^\s*(draft|placeholder|todo|tbd)?\s*$/i.test(d.summary) || d.summary.trim().length < 20) problems.push("The summary is missing or a placeholder.");
@@ -252,7 +256,7 @@ export function checkDraft(ctx: Context, d: Draft, input: DraftInput): string[] 
   if (!wildcardWanted(ctx, input) && wildcards.length) problems.push("No wildcard is wanted: leave origin empty for every dish.");
   d.dishes.forEach((dish, i) => {
     if (!d.lines.some((l) => l.dish === i + 1)) problems.push(`Dish ${i + 1} (${dish.name}) has no products.`);
-    problems.push(...dishRecipeProblems(ctx, dish).map((p) => `Dish ${i + 1} (${dish.name}): ${p}`));
+    problems.push(...dishRecipeProblems(ctx, dish, { timing }).map((p) => `Dish ${i + 1} (${dish.name}): ${p}`));
   });
   for (const l of d.lines) {
     const name = ctx.store.productName(l.productCode);
@@ -288,9 +292,9 @@ export function checkDraft(ctx: Context, d: Draft, input: DraftInput): string[] 
 
 // What is wrong with a dish's recipe: a new one must pass the recipe
 // checks and be for the dish's portions; a reused one must have steps.
-export function dishRecipeProblems(ctx: Context, dish: { portions: number; recipeId?: number; recipe?: unknown }): string[] {
+export function dishRecipeProblems(ctx: Context, dish: { portions: number; recipeId?: number; recipe?: unknown }, { timing = true }: { timing?: boolean } = {}): string[] {
   if (dish.recipe !== undefined && dish.recipe !== null) {
-    const problems = recipeProblems(dish.recipe);
+    const problems = recipeProblems(dish.recipe, { timing });
     const servings = Recipe.safeParse(dish.recipe).data?.servings;
     if (servings !== undefined && servings !== dish.portions) problems.push(`The recipe is for ${servings} servings but the dish is ${dish.portions} portions: write it for ${dish.portions}.`);
     return problems;

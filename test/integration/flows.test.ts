@@ -68,6 +68,19 @@ describe("the weekly cycle", () => {
     assert.equal(env.gateway.posts.length, 0);
   });
 
+  test("recipes that only cook in a poor order are sent back, and taken on the last try rather than losing the week", async () => {
+    const draft = goodDraft();
+    const recipe = draft.dishes[0]!.recipe;
+    // The rice put on first, so it is ready long before the stew.
+    draft.dishes[0]!.recipe = { ...recipe, steps: [recipe.steps.find((s) => s.id === "rice")!, ...recipe.steps.filter((s) => s.id !== "rice")] };
+    env.claude([{ calls: SEARCHES, output: draft }, { output: draft }, { output: draft }]);
+    const res = await env.wb(["plan"]);
+    assert.equal(res.code, 0, res.stderr);
+    assert.match(env.claudeLog()[1].prompt, /Dish 1 \(Chicken curry\): Step rice is ready \d+ minutes before step serve needs it/);
+    assert.equal(env.claudeLog().length, 3);
+    assert.equal(row<{ status: string }>(env, `SELECT status FROM weeks WHERE id = ?`, WEEK)?.status, "open");
+  });
+
   test("Approve fills the cart, books the evening slot and confirms it in the channel", async () => {
     await plannedWeek(env);
     await slack(env, { type: "action", from: stephen, action: { id: "plan.approve", value: WEEK }, where: where() });
