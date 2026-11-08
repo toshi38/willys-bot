@@ -6,6 +6,7 @@ import type { Context } from "../core/context.ts";
 import type { Household } from "../core/household.ts";
 import { Store } from "../core/store.ts";
 import { localDate } from "../plan/week.ts";
+import { sampleRecipe } from "../recipes/sample.ts";
 import { buildServer } from "./tools.ts";
 
 // Weeks relative to today, so the tests do not expire.
@@ -186,4 +187,24 @@ test("dish_rate rates dishes from ordered weeks, not suggestions still waiting",
   assert.deepEqual(store.dishRatings(eaten.id).map((r) => [r.member, r.stars, r.comment]), [["Carin", 4, "a bit dry"]]);
   assert.match((await call("dish_rate", { dishId: waiting.id, stars: 5 })).text, /not a dish the household ordered/);
   assert.equal((await call("dish_rate", { dishId: eaten.id, stars: 6 })).error, true);
+});
+
+test("dish_add saves a checked recipe, and sends one with problems back with what to fix", async () => {
+  const store = new Store(":memory:");
+  weekWithDish(store, NEXT);
+  const call = await connect(store);
+  const recipe = sampleRecipe(6);
+  const noRice = { ...recipe, steps: recipe.steps.filter((s) => s.id !== "rice").map((s) => (s.id === "serve" ? { ...s, uses: [], after: ["stew"] } : s)) };
+  const bad = await call("dish_add", { name: "Stew", portions: 6, why: "Asked for", recipe: noRice });
+  assert.equal(bad.error, true);
+  assert.match(bad.text, /Fix the recipe and call dish_add again:\n- Ingredient rice is not used by any step\./);
+  assert.equal(store.dishes(NEXT).length, 1);
+
+  const good = await call("dish_add", { name: "Stew", portions: 6, why: "Asked for", recipe });
+  assert.equal(good.error, false);
+  const dish = store.dishes(NEXT)[1]!;
+  assert.deepEqual(store.recipe(dish.recipeId!)?.structured, recipe);
+  // A text-only recipe cannot be reused as it is.
+  const text = (await call("dish_add", { name: "Curry", portions: 6, why: "Again", recipeId: store.dishes(NEXT)[0]!.recipeId })).text;
+  assert.match(text, /has no steps yet/);
 });

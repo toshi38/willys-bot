@@ -1,7 +1,8 @@
 import type { Context } from "../core/context.ts";
 import { memberByLogin } from "../core/household.ts";
 import { snapshotCampaigns } from "../core/prices.ts";
-import type { Dish, Week, WeekItem } from "../core/store.ts";
+import type { Dish, Recipe, Week, WeekItem } from "../core/store.ts";
+import { timeline } from "../recipes/check.ts";
 import { sendToMembers } from "../notify/email.ts";
 import { updateSlack, type SlackButton, type SlackRef } from "../notify/slack.ts";
 import { dropUnpicked, isPicked, picking, pickProblem } from "./picks.ts";
@@ -360,6 +361,16 @@ export async function bookSlot(ctx: Context, week: Week, cartNote: string): Prom
 // find. While the household picks dishes, the dishes are numbered with
 // what each costs, and the shopping shows the basics and the picked
 // dishes: what would be ordered now.
+// How long a recipe takes to cook and how much of it is hands-on, as in
+// "50 min, 30 hands-on", from its timed steps; null for a recipe saved as
+// text only.
+export function cookingTime(recipe: Recipe | null): string | null {
+  if (!recipe?.structured) return null;
+  const t = timeline(recipe.structured);
+  const span = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`);
+  return `${span(t.totalMinutes)}, ${t.activeMinutes} hands-on`;
+}
+
 export function renderWeek(ctx: Context, week: Week): string {
   const { store } = ctx;
   const choosing = picking(ctx, week);
@@ -370,9 +381,13 @@ export function renderWeek(ctx: Context, week: Week): string {
   const shown = dishes.filter((d) => !choosing || isPicked(d));
   const line = (i: WeekItem) => `- ${i.qty} x ${i.name ?? i.productCode}${i.unitPrice !== null ? `, ${fmt(i.unitPrice)} kr` : ""}.${i.reason ? ` ${i.reason}` : ""}`;
   const origin = (d: Dish) => (d.origin ? ` 🌍 *Wildcard from ${d.origin}.*` : "");
+  const time = (d: Dish) => {
+    const t = cookingTime(d.recipeId ? store.recipe(d.recipeId) : null);
+    return t ? `, ${t}` : "";
+  };
   const dishLines = choosing
-    ? dishes.map((d, i) => `${i + 1}. ${isPicked(d) ? "✅ " : ""}**${d.name}** (${d.portions} portions, about ${Math.round(sum(forDish(d)))} kr).${origin(d)} ${d.why}`)
-    : dishes.map((d) => `- **${d.name}** (${d.portions} portions).${origin(d)} ${d.why}`);
+    ? dishes.map((d, i) => `${i + 1}. ${isPicked(d) ? "✅ " : ""}**${d.name}** (${d.portions} portions, about ${Math.round(sum(forDish(d)))} kr${time(d)}).${origin(d)} ${d.why}`)
+    : dishes.map((d) => `- **${d.name}** (${d.portions} portions${time(d)}).${origin(d)} ${d.why}`);
   const requests = items.filter((i) => i.source === "request");
   const rest = items.filter((i) => i.source !== "request" && (i.dishId === null || !dishes.some((d) => d.id === i.dishId)));
   const bought = [...requests, ...rest, ...shown.flatMap(forDish)];

@@ -6,6 +6,8 @@ import { leakProblems } from "./leaks.ts";
 import { fromText } from "./legacy.ts";
 import { Recipe } from "./recipe.ts";
 import { buildSite, cookData, dishSlugs, isoWeek, recipePage, slug, SiteConfig, SiteWeek, weekName, weekPage, weekRange } from "./site.ts";
+import { Store } from "../core/store.ts";
+import { siteWeek } from "./export.ts";
 
 const root = new URL("../../", import.meta.url);
 const skill = readFileSync(new URL(".claude/skills/recipe-writing/SKILL.md", root), "utf8");
@@ -183,4 +185,16 @@ test("an ingredient an earlier step worked on is named by that step, not given i
   ]);
   const sv = cookData({ title: "Mat", language: "sv" }, { pickup: "2026-10-30", dishes: [{ name: "x", portions: 4, recipe: text, fromText: true }] }, 0);
   assert.deepEqual(sv.steps[2]!.uses, ['fried tofu <span class="from">från steg 1</span>', 'fried chicken <span class="from">från steg 2</span>']);
+});
+
+test("a week from the database reads as the site's week, structured recipes as they are and text ones read as steps", () => {
+  const store = new Store(":memory:");
+  store.claimWeek("2026-11-06");
+  const structured = store.saveRecipe({ name: "Curry", ingredients: "x", method: "y", structured: example }, "planner");
+  const text = store.saveRecipe({ name: "Soup", servings: 4, ingredients: "1 l stock", method: "1. Simmer the stock 10 minutes.\n2. Serve." }, "planner");
+  store.addDish("2026-11-06", { name: "Curry", portions: 6, recipeId: structured.id }, "planner");
+  store.addDish("2026-11-06", { name: "Soup", portions: 4, recipeId: text.id }, "planner");
+  const w = SiteWeek.parse(siteWeek(store, "2026-11-06"));
+  assert.deepEqual(w.dishes.map((d) => [d.name, d.fromText, d.recipe.steps.length]), [["Curry", false, 6], ["Soup", true, 2]]);
+  assert.deepEqual(w.dishes[0]!.recipe, example);
 });

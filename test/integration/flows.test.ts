@@ -56,12 +56,12 @@ describe("the weekly cycle", () => {
     assert.equal(env.claudeLog().length, 1);
   });
 
-  test("a placeholder draft is retried once and then nothing is saved or sent", async () => {
+  test("a placeholder draft is retried twice and then nothing is saved or sent", async () => {
     const placeholder = { summary: "draft", dishes: [], lines: [{ productCode: "960257_PLACEHOLDER", qty: 1, reason: "", dish: 0, listItemIds: [], restocks: "" }], skipped: [], notes: "draft" };
-    env.claude([{ output: placeholder }, { output: placeholder }]);
+    env.claude([{ output: placeholder }, { output: placeholder }, { output: placeholder }]);
     const res = await env.wb(["plan"]);
     assert.notEqual(res.code, 0);
-    assert.match(res.stderr, /failed its checks twice/);
+    assert.match(res.stderr, /failed its checks three times/);
     assert.match(env.claudeLog()[1].prompt, /Your previous answer was rejected/);
     assert.equal(row(env, `SELECT * FROM weeks WHERE id = ?`, WEEK), undefined);
     assert.equal(env.resend.sent.length, 0);
@@ -255,7 +255,7 @@ describe("picking from more suggestions than the household cooks, and rating wha
     await plannedWeek(env);
     const plan = env.gateway.posts.find((p) => p.buttons.length)!;
     assert.deepEqual(plan.buttons.map((b) => b.action), ["plan.pick", "plan.pick", "plan.approve", "plan.redraft", "plan.skip"]);
-    assert.match(plan.text, /## Suggestions\n1\. \*\*Chicken curry\*\* \(6 portions, about \d+ kr\)/);
+    assert.match(plan.text, /## Suggestions\n1\. \*\*Chicken curry\*\* \(6 portions, about \d+ kr, 37 min, 17 hands-on\)/);
     assert.match(env.resend.sent[0].text, /1, 3, 5/);
 
     const refused = await slack(env, { type: "action", from: stephen, action: { id: "plan.approve", value: WEEK }, where: where() });

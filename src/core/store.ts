@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import type { Recipe as StructuredRecipe } from "../recipes/recipe.ts";
 import type { Product } from "../willys/types.ts";
 
 // SQLite persistence, one database per household: the shared shopping list,
@@ -110,6 +111,10 @@ export interface Recipe {
   ingredients: string;
   method: string;
   notes: string | null;
+  // The recipe as ingredients and timed steps, which the recipe site and
+  // cook mode show. Recipes saved as text only have none, and their
+  // ingredients and method are all there is.
+  structured: StructuredRecipe | null;
   createdBy: string;
   updatedAt: string;
 }
@@ -357,6 +362,7 @@ export class Store {
     if (!has("products", "category")) this.#db.exec(`ALTER TABLE products ADD COLUMN category TEXT`);
     if (!has("dishes", "origin")) this.#db.exec(`ALTER TABLE dishes ADD COLUMN origin TEXT`);
     if (!has("dishes", "picked_by")) this.#db.exec(`ALTER TABLE dishes ADD COLUMN picked_by TEXT`);
+    if (!has("recipes", "structured")) this.#db.exec(`ALTER TABLE recipes ADD COLUMN structured TEXT`);
   }
 
   close(): void {
@@ -854,12 +860,12 @@ export class Store {
   // for reuse in later weeks. A saved recipe never changes, so past weeks
   // keep the recipe they had; a new version is a new recipe.
 
-  saveRecipe(r: { name: string; servings?: number | null; ingredients: string; method: string; notes?: string | null }, by: string): Recipe {
+  saveRecipe(r: { name: string; servings?: number | null; ingredients: string; method: string; notes?: string | null; structured?: StructuredRecipe | null }, by: string): Recipe {
     const row = this.#db
       .prepare(
-        `INSERT INTO recipes (name, servings, ingredients, method, notes, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        `INSERT INTO recipes (name, servings, ingredients, method, notes, structured, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
       )
-      .get(r.name.trim(), r.servings ?? null, r.ingredients, r.method, r.notes ?? null, by, now(), now());
+      .get(r.name.trim(), r.servings ?? null, r.ingredients, r.method, r.notes ?? null, r.structured ? JSON.stringify(r.structured) : null, by, now(), now());
     return toRecipe(row);
   }
 
@@ -1114,6 +1120,7 @@ function toRecipe(r: Record<string, unknown> | undefined): Recipe {
     ingredients: String(r.ingredients),
     method: String(r.method),
     notes: (r.notes as string | null) ?? null,
+    structured: typeof r.structured === "string" ? (JSON.parse(r.structured) as StructuredRecipe) : null,
     createdBy: String(r.created_by),
     updatedAt: String(r.updated_at),
   };

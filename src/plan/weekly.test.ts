@@ -9,6 +9,7 @@ import { Store } from "../core/store.ts";
 import type { Product } from "../willys/types.ts";
 import { checkDraft, writeDraft, type Draft } from "./planner.ts";
 import { decide, renderWeek, syncCart } from "./weekly.ts";
+import { sampleRecipe } from "../recipes/sample.ts";
 
 const household = {
   id: "test",
@@ -40,14 +41,14 @@ function setup(): { store: Store; ctx: Context } {
   return { store, ctx: { store, household } as unknown as Context };
 }
 
-const recipe = { servings: 6, ingredients: ["700 g chicken thigh", "1 tin coconut milk"], method: "1. Brown the chicken. 2. Simmer in the sauce for 30 minutes." };
+const recipe = sampleRecipe(6);
 
 function goodDraft(listItemId: number): Draft {
   return {
     summary: "Two strong, lower calorie dishes built around this week's chicken and mince offers.",
     dishes: [
       { name: "Chicken curry", portions: 6, why: "Thigh fillet on offer", origin: "", recipeId: 0, recipe },
-      { name: "Chili con carne", portions: 6, why: "Lean mince", origin: "", recipeId: 0, recipe: { ...recipe, ingredients: ["500 g mince", "2 tins beans"] } },
+      { name: "Chili con carne", portions: 6, why: "Lean mince", origin: "", recipeId: 0, recipe: sampleRecipe(6, "mince") },
     ],
     lines: [
       { productCode: "SKYR_ST", qty: 1, reason: "Carin's skyr", dish: 0, listItemIds: [listItemId], restocks: "" },
@@ -112,7 +113,8 @@ test("a written draft records where each item comes from, and saves the recipes"
   assert.deepEqual(bySource("staple"), ["RICE_ST"]);
   assert.equal(items[0].requestedBy, "Carin");
   assert.equal(items.find((i) => i.productCode === "BEANS_ST")?.dishId, dishes[1].id);
-  assert.equal(store.recipe(dishes[0].recipeId!)?.method, recipe.method);
+  assert.deepEqual(store.recipe(dishes[0].recipeId!)?.structured, recipe);
+  assert.match(store.recipe(dishes[0].recipeId!)!.method, /^1\. Chop the onion\.\n2\. Brown the chicken/);
   assert.equal(store.listItems().length, 0);
   assert.equal(store.listItems(["planned"])[0].id, skyr.id);
   // Writing the draft is not a change the household needs to be told about.

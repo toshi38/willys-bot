@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { runClaude } from "../core/claude.ts";
 import type { Context } from "../core/context.ts";
 import { picksDishes, suggestionCount } from "../core/household.ts";
 import { needsCategory, productFacts, ruleProblems } from "../core/rules.ts";
 import type { ListItem, WeekItem } from "../core/store.ts";
+import { recipeProblems } from "../recipes/check.ts";
+import { Recipe, recipeText } from "../recipes/recipe.ts";
 
 // The week's first draft, made by headless Claude Code (`claude -p`) on the
 // operator's Claude subscription. Claude gets the household's preferences,
@@ -25,7 +28,9 @@ const DraftOutput = z.object({
       why: z.string().default(""),
       origin: z.string().default(""),
       recipeId: z.number().int().default(0),
-      recipe: z.object({ servings: z.number().int().default(0), ingredients: z.array(z.string()).default([]), method: z.string().default("") }).default({ servings: 0, ingredients: [], method: "" }),
+      // Checked with recipeProblems, which says what to fix in words the
+      // planner can act on, rather than parsed here.
+      recipe: z.unknown().optional(),
     }),
   ),
   lines: z.array(
@@ -43,6 +48,15 @@ const DraftOutput = z.object({
 });
 export type Draft = z.infer<typeof DraftOutput>;
 
+const { $schema: _, ...RECIPE_SCHEMA } = z.toJSONSchema(Recipe, { io: "input" }) as Record<string, unknown>;
+
+// How to write a recipe: the project's recipe-writing skill, without its
+// front matter, so the planner and Claude Code sessions follow one text.
+const RECIPE_RULES = readFileSync(new URL("../../.claude/skills/recipe-writing/SKILL.md", import.meta.url), "utf8")
+  .replace(/^---\n[\s\S]*?\n---\n/, "")
+  .replace(/^# .*\n/m, "")
+  .trim();
+
 const DRAFT_SCHEMA = {
   type: "object",
   properties: {
@@ -56,18 +70,10 @@ const DRAFT_SCHEMA = {
           portions: { type: "integer", minimum: 1 },
           why: { type: "string", description: "Why this dish this week: offers used, flavour, protein" },
           origin: { type: "string", description: "For the wildcard dish only: the country it comes from. Empty for every other dish." },
-          recipeId: { type: "integer", description: "Id of a known recipe this dish reuses, or 0 for a new one" },
-          recipe: {
-            type: "object",
-            properties: {
-              servings: { type: "integer" },
-              ingredients: { type: "array", items: { type: "string" }, description: "With amounts, for the portions" },
-              method: { type: "string", description: "A few short numbered steps" },
-            },
-            required: ["servings", "ingredients", "method"],
-          },
+          recipeId: { type: "integer", description: "Id of a known recipe this dish reuses as it is, or 0 for a new one" },
+          recipe: { ...RECIPE_SCHEMA, description: "The whole meal as ingredients and ordered steps, for the dish's portions. Leave out only when reusing a known recipe that has steps." },
         },
-        required: ["name", "portions", "why", "origin", "recipeId", "recipe"],
+        required: ["name", "portions", "why", "origin", "recipeId"],
       },
     },
     lines: {
@@ -98,7 +104,7 @@ const DRAFT_SCHEMA = {
   required: ["summary", "dishes", "lines", "skipped", "notes"],
 };
 
-const SYSTEM_PROMPT = `You do the weekly grocery shop for a household at Willys, a Swedish discount supermarket. You plan the week's dishes, write their recipes, and pick the exact products to order for click-and-collect.
+export const SYSTEM_PROMPT = `You do the weekly grocery shop for a household at Willys, a Swedish discount supermarket. You plan the week's dishes, write their recipes, and pick the exact products to order for click-and-collect.
 
 Work like a careful, thrifty person who knows this household:
 - Follow the household's preferences closely. They override your own ideas. Dietary rules such as allergies and celiac disease are absolute: check product names and ask yourself whether the product could contain the allergen; when unsure, choose a product labelled free of it, or leave it out and say so in notes.
@@ -109,14 +115,18 @@ Work like a careful, thrifty person who knows this household:
 - Use comparePrice (price per kg or litre) to pick between similar products, and price_history or the verdict to judge an offer.
 - Mind multi-buy offers ("3 för 50"): only meet the quantity when the household will use it.
 - Keep near the budget when one is given; say in notes if you go over and why.
-- Every dish needs a short recipe (ingredients with amounts for its portions, and a method of a few steps) and the products to cook it. Link each line to the dish it is for; lines for no dish (list items, restocks, everyday basics) use dish 0.
-- Vary the menu from recent weeks. Reuse a known recipe by its id when it suits the week, and keep its name.
+- Every dish needs a full recipe, written as the section "How to write a recipe" below says, and the products to cook it. The recipe is the whole meal: whatever is served with the dish (rice, pasta, potatoes, bread, a salad) is in its ingredients and has steps that make it. Link each line to the dish it is for; lines for no dish (list items, restocks, everyday basics) use dish 0.
+- Vary the menu from recent weeks. Reuse a known recipe by its id when it suits the week, and keep its name. A known recipe without steps (recipe_view shows structured as null) must be written out in full as the dish's recipe.
 - Learn from the household's ratings (1 to 5 stars, with comments): bring back recipes rated 4 or more now and then, never suggest one rated 2 or less again, and take the comments into account for new dishes.
 - When the household picks some of your suggestions, make them a real choice: different proteins, cuisines and effort, each dish with its own products so any of them can be ordered without the others.
 - Items already in this week's shop are fixed: do not add them again and do not plan around removing them.
 - Only answer once the plan is complete. Never return a draft, a placeholder or an invented product code.
 - The household's brand and gluten rules are checked in code after you answer. search_products marks products of an avoided brand and products that look like they contain gluten. Avoid both. If you must buy one, start that line's reason with "Brand exception:" (every other brand costs more than double) or "Gluten checked:" (you know it is gluten free) and say why; otherwise the plan is rejected.
-Write the summary, reasons and notes in the household's language. Never use em dashes or en dashes; use commas, colons or full stops.`;
+Write the summary, reasons, notes and recipes in the household's language. Never use em dashes or en dashes; use commas, colons or full stops.
+
+# How to write a recipe
+
+${RECIPE_RULES}`;
 
 export interface DraftInput {
   // Items already in the week, kept as they are (a redraft keeps requests
@@ -225,7 +235,7 @@ export async function makeDraft(ctx: Context, weekId: string, input: DraftInput)
     if (parsed.success) for (const l of parsed.data.lines) await productFacts(ctx, l.productCode).catch(() => null);
     const problems = parsed.success ? checkDraft(ctx, parsed.data, input) : [`The answer did not match the schema: ${parsed.error.message.slice(0, 300)}`];
     if (!problems.length && parsed.success) return parsed.data;
-    if (attempt >= 2) throw new Error(`The planner's draft failed its checks twice: ${problems.join("; ")}`);
+    if (attempt >= 3) throw new Error(`The planner's draft failed its checks three times: ${problems.join("; ")}`);
     prompt = `${buildPrompt(ctx, weekId, input)}\n\n## Your previous answer was rejected\n${problems.map((p) => `- ${p}`).join("\n")}\nPlan the whole week again and fix these.`;
   }
 }
@@ -242,8 +252,7 @@ export function checkDraft(ctx: Context, d: Draft, input: DraftInput): string[] 
   if (!wildcardWanted(ctx, input) && wildcards.length) problems.push("No wildcard is wanted: leave origin empty for every dish.");
   d.dishes.forEach((dish, i) => {
     if (!d.lines.some((l) => l.dish === i + 1)) problems.push(`Dish ${i + 1} (${dish.name}) has no products.`);
-    const known = dish.recipeId > 0 && ctx.store.recipe(dish.recipeId);
-    if (!known && (!dish.recipe.ingredients.length || dish.recipe.method.trim().length < 20)) problems.push(`Dish ${i + 1} (${dish.name}) needs a recipe.`);
+    problems.push(...dishRecipeProblems(ctx, dish).map((p) => `Dish ${i + 1} (${dish.name}): ${p}`));
   });
   for (const l of d.lines) {
     const name = ctx.store.productName(l.productCode);
@@ -277,6 +286,30 @@ export function checkDraft(ctx: Context, d: Draft, input: DraftInput): string[] 
   return problems;
 }
 
+// What is wrong with a dish's recipe: a new one must pass the recipe
+// checks and be for the dish's portions; a reused one must have steps.
+export function dishRecipeProblems(ctx: Context, dish: { portions: number; recipeId?: number; recipe?: unknown }): string[] {
+  if (dish.recipe !== undefined && dish.recipe !== null) {
+    const problems = recipeProblems(dish.recipe);
+    const servings = Recipe.safeParse(dish.recipe).data?.servings;
+    if (servings !== undefined && servings !== dish.portions) problems.push(`The recipe is for ${servings} servings but the dish is ${dish.portions} portions: write it for ${dish.portions}.`);
+    return problems;
+  }
+  const known = dish.recipeId ? ctx.store.recipe(dish.recipeId) : null;
+  if (!known) return ["It needs a recipe."];
+  if (!known.structured) return [`Recipe ${known.id} has no steps yet: write it out in full as the dish's recipe.`];
+  return [];
+}
+
+// Saves a checked dish's recipe, or finds the known one it reuses.
+export function dishRecipeId(ctx: Context, dish: { name: string; recipeId?: number; recipe?: unknown }, by: string): number {
+  if (dish.recipe !== undefined && dish.recipe !== null) {
+    const r = Recipe.parse(dish.recipe);
+    return ctx.store.saveRecipe({ name: dish.name, servings: r.servings, ...recipeText(r), notes: r.notes ?? null, structured: r }, by).id;
+  }
+  return ctx.store.recipe(dish.recipeId!)!.id;
+}
+
 // Writes a checked draft as the week's dishes, recipes and items. Lines
 // that cover a list item are requests from whoever added the item; lines
 // for a dish go with it; the rest are staples.
@@ -285,11 +318,8 @@ export function writeDraft(ctx: Context, weekId: string, d: Draft): void {
   const list = new Map(store.listItems().map((i) => [i.id, i]));
   store.transaction(() => {
     const dishIds = d.dishes.map((dish) => {
-      const reused = dish.recipeId > 0 ? store.recipe(dish.recipeId) : null;
-      const recipe =
-        reused ??
-        store.saveRecipe({ name: dish.name, servings: dish.recipe.servings || dish.portions, ingredients: dish.recipe.ingredients.join("\n"), method: dish.recipe.method }, "planner");
-      return store.addDish(weekId, { name: dish.name, portions: dish.portions, why: dish.why, recipeId: recipe.id, origin: dish.origin.trim() || null }, "planner").id;
+      const recipeId = dishRecipeId(ctx, dish, "planner");
+      return store.addDish(weekId, { name: dish.name, portions: dish.portions, why: dish.why, recipeId, origin: dish.origin.trim() || null }, "planner").id;
     });
     for (const l of d.lines) {
       const listItem = l.listItemIds.map((id) => list.get(id)).find((i) => i !== undefined);

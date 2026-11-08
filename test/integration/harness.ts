@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Turn } from "./fake-claude.ts";
+import { sampleRecipe } from "../../src/recipes/sample.ts";
 
 // Everything an integration test runs against: the real CLI, database and
 // MCP server, with Willys, Resend and Slack replaced by local fakes and
@@ -307,12 +308,12 @@ export function nextFriday(from = new Date()): string {
 
 // A draft the planner's checks accept, for the products in CATALOG.
 export function goodDraft(listItemIds: number[] = []) {
-  const recipe = { servings: 6, ingredients: ["700 g chicken thigh", "1 tin coconut milk"], method: "1. Brown the chicken. 2. Simmer in the sauce for 30 minutes." };
+  const recipe = sampleRecipe(6);
   return {
     summary: "Two strong, lower calorie dishes built around this week's chicken and mince offers.",
     dishes: [
       { name: "Chicken curry", portions: 6, why: "Thigh fillet on offer", origin: "", recipeId: 0, recipe },
-      { name: "Chili con carne", portions: 6, why: "Lean mince", origin: "", recipeId: 0, recipe: { ...recipe, ingredients: ["500 g mince", "2 tins beans"] } },
+      { name: "Chili con carne", portions: 6, why: "Lean mince", origin: "", recipeId: 0, recipe: sampleRecipe(6, "mince") },
     ],
     lines: [
       { productCode: "CHICKEN_ST", qty: 2, reason: "Curry", dish: 1, listItemIds: [], restocks: "" },

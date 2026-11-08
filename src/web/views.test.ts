@@ -50,6 +50,7 @@ const recipe: Recipe = {
   ingredients: "700 g chicken thigh\n\n1 tin coconut milk",
   method: "1. Brown the chicken.\n2. Simmer.",
   notes: null,
+  structured: null,
   createdBy: "planner",
   updatedAt: "2026-10-28T06:00:00.000Z",
 };

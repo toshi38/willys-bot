@@ -265,7 +265,10 @@ export const SCENARIOS: Scenario[] = [
       const curry = s.after.dishes.find((d) => /curry/i.test(d.name));
       if (!curry) out.push("no curry dish");
       else {
-        if (!curry.recipeId || !store.recipe(curry.recipeId)) out.push("the curry has no recipe");
+        const recipe = curry.recipeId ? store.recipe(curry.recipeId) : null;
+        if (!recipe) out.push("the curry has no recipe");
+        else if (!recipe.structured) out.push("the curry's recipe has no steps");
+        else if (!recipe.structured.steps.some((st) => st.uses.some((u) => /rice|ris/i.test(recipe.structured!.ingredients.find((i) => i.id === u.ingredient)?.name ?? "")) && /rice|ris/i.test(st.text) && st.timer)) out.push("no step cooks the rice");
         if (!s.after.items.some((i) => i.dishId === curry.id)) out.push("nothing bought for the curry");
       }
       if (qty(s.after, "SWEETPOTATO_KG") || qty(s.after, "LEEK_KG")) out.push("the braise's sweet potato or leek is still bought");

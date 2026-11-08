@@ -4,7 +4,8 @@ import type { Context } from "../core/context.ts";
 import type { Household } from "../core/household.ts";
 import { Store } from "../core/store.ts";
 import type { Product } from "../willys/types.ts";
-import { buildPrompt, checkDraft, openRequests, type Draft, type DraftInput } from "./planner.ts";
+import { buildPrompt, checkDraft, dishRecipeProblems, openRequests, SYSTEM_PROMPT, type Draft, type DraftInput } from "./planner.ts";
+import { sampleRecipe } from "../recipes/sample.ts";
 
 const WEEK = "2026-10-30";
 
@@ -105,7 +106,7 @@ test("the open requests are the list items not already in the week", () => {
   assert.deepEqual(openRequests(ctx, []).map((i) => i.id), [skyr.id, eggs.id]);
 });
 
-const recipe = { servings: 4, ingredients: ["400 g beans"], method: "1. Soak the beans. 2. Simmer them for an hour." };
+const recipe = sampleRecipe(4, "beans");
 
 function redraftSetup() {
   const store = new Store(":memory:");
@@ -152,15 +153,15 @@ test("with every dish kept, a redraft may plan no dishes at all", () => {
 
 test("a dish reusing a known recipe needs no recipe of its own, and lines must point at real dishes", () => {
   const { store, ctx, input, eggs } = redraftSetup();
-  const known = store.saveRecipe({ name: "Bean stew", ingredients: "beans", method: "cook" }, "planner");
+  const known = store.saveRecipe({ name: "Bean stew", ingredients: "beans", method: "cook", structured: recipe }, "planner");
   const reused = draft({
-    dishes: [{ name: "Bean stew", portions: 4, why: "Again", origin: "", recipeId: known.id, recipe: { servings: 0, ingredients: [], method: "" } }],
+    dishes: [{ name: "Bean stew", portions: 4, why: "Again", origin: "", recipeId: known.id }],
     skipped: [{ listItemId: eggs.id, reason: "None" }],
   });
   assert.deepEqual(checkDraft(ctx, reused, input), []);
 
   const unknownRecipe = draft({ ...reused, dishes: [{ ...reused.dishes[0], recipeId: 999 }] });
-  assert.deepEqual(checkDraft(ctx, unknownRecipe, input), ["Dish 1 (Bean stew) needs a recipe."]);
+  assert.deepEqual(checkDraft(ctx, unknownRecipe, input), ["Dish 1 (Bean stew): It needs a recipe."]);
 
   const badLine = draft({ ...reused, lines: [...reused.lines, { productCode: "EGGS_ST", qty: 1, reason: "", dish: 3, listItemIds: [], restocks: "" }] });
   assert.deepEqual(checkDraft(ctx, badLine, input), ["Line EGGS_ST points at dish 3, which does not exist."]);
@@ -226,4 +227,24 @@ test("the prompt lists how the household rated recipes, best first, with comment
     section(buildPrompt(ctx, WEEK, none), "How the household rated dishes they cooked (best first)"),
     `\n- Khachapuri (recipe ${loved.id}): 4.5 of 5 from 2 ratings: "amazing"\n- Bean soup (recipe ${meh.id}): 2 of 5 from 1 rating: "bland"`,
   );
+});
+
+test("a dish's recipe must be a checked, whole meal for its portions, and a reused one must have steps", () => {
+  const store = new Store(":memory:");
+  const ctx = { store, household: household({}) } as unknown as Context;
+  assert.deepEqual(dishRecipeProblems(ctx, { portions: 4, recipe }), []);
+  // Rice listed to serve, but no step cooks it.
+  const noRice = { ...recipe, steps: recipe.steps.map((s) => ({ ...s, uses: s.uses.filter((u) => u.ingredient !== "rice") })).filter((s) => s.id !== "rice"), };
+  noRice.steps.at(-1)!.after = ["stew"];
+  assert.deepEqual(dishRecipeProblems(ctx, { portions: 4, recipe: noRice }), ["Ingredient rice is not used by any step."]);
+  assert.deepEqual(dishRecipeProblems(ctx, { portions: 6, recipe }), ["The recipe is for 4 servings but the dish is 6 portions: write it for 6."]);
+  const text = store.saveRecipe({ name: "Old stew", ingredients: "beans", method: "cook" }, "planner");
+  assert.deepEqual(dishRecipeProblems(ctx, { portions: 4, recipeId: text.id }), [`Recipe ${text.id} has no steps yet: write it out in full as the dish's recipe.`]);
+  assert.deepEqual(dishRecipeProblems(ctx, { portions: 4 }), ["It needs a recipe."]);
+});
+
+test("the planner is told how to write a recipe, from the recipe-writing skill", () => {
+  assert.match(SYSTEM_PROMPT, /# How to write a recipe\n\nA recipe is cooked from a phone/);
+  assert.match(SYSTEM_PROMPT, /The recipe is the whole meal/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /^name: recipe-writing/m);
 });

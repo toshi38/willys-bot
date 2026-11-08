@@ -10,6 +10,7 @@ import { postToWeek, toSlack } from "./plan/week.ts";
 import { handleSlack, type SlackRequest } from "./plan/slack.ts";
 import { sendSurvey } from "./plan/survey.ts";
 import { apply, bookSlot, planWeek, redraftWeek, renderWeek } from "./plan/weekly.ts";
+import { siteWeek } from "./recipes/export.ts";
 
 const USAGE = `Usage: npm run wb -- <command> [--household <id>]
 
@@ -37,6 +38,7 @@ const USAGE = `Usage: npm run wb -- <command> [--household <id>]
   book-slot <pickup-date> book the pickup slot for a week whose cart is already filled, and confirm it
                           (for a failed week, only after checking on willys.se that the cart is complete)
   weeks                   list recent weeks and their status
+  site-week <pickup-date> print a week's recipes as the recipe site's site-data/weeks/<date>.json
   alert <unit>            email the operator that a systemd unit failed, with its last log lines
                           (at most once every six hours per unit; run by OnFailure=)`;
 
@@ -248,6 +250,11 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
         store.orderListItems(week.id);
       }
       console.log(await bookSlot(ctx, store.week(week.id)!, `The cart is filled: ${cart.products.length} products, total ${cart.totalPrice ?? "?"}.`));
+      return;
+    }
+    case "site-week": {
+      if (!rest[0] || !store.week(rest[0])) throw new Error(rest[0] ? `No week ${rest[0]}` : "site-week needs a pickup date");
+      console.log(JSON.stringify(siteWeek(store, rest[0]), null, 2));
       return;
     }
     case "weeks": {

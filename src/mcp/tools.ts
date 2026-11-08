@@ -4,7 +4,9 @@ import type { Context } from "../core/context.ts";
 import { judgePrice, recordSearchResults } from "../core/prices.ts";
 import { picksDishes, savePreferences } from "../core/household.ts";
 import { brokenRule, glutenRisk, needsCategory, productFacts, ruleProblems, type ProductFacts } from "../core/rules.ts";
+import { dishRecipeId, dishRecipeProblems } from "../plan/planner.ts";
 import { editable, localDate } from "../plan/week.ts";
+import { Recipe } from "../recipes/recipe.ts";
 import type { PantryStatus, Store, Week, WeekStatus } from "../core/store.ts";
 
 // The household's MCP tools: the shared shopping list, the pantry, product
@@ -216,26 +218,21 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
     "dish_add",
     {
       description:
-        "Add a dish to this week's shop, with its recipe, or reuse a known recipe by recipeId. Then add its ingredients with week_add_item and the dish's id. To swap a dish, dish_remove the old one first.",
+        "Add a dish to this week's shop, with its recipe, or reuse a known recipe that has steps by recipeId. Then add its ingredients with week_add_item and the dish's id. To swap a dish, dish_remove the old one first. The recipe is the whole meal (rice, potatoes, a salad served with it are ingredients with steps that make them), in steps ordered so the cook is never idle while something cooks; it is checked, and a recipe with problems is sent back with what to fix.",
       inputSchema: {
         name: z.string().min(1),
         portions: z.number().int().min(1),
         why: z.string().describe("Why this dish: offers used, flavour, protein, or what the member asked for"),
-        recipeId: z.number().int().optional(),
-        ingredients: z.array(z.string()).optional().describe("With amounts, for the portions; needed without recipeId"),
-        method: z.string().optional().describe("A few short numbered steps; needed without recipeId"),
+        recipeId: z.number().int().optional().describe("A known recipe to reuse as it is"),
+        recipe: Recipe.optional().describe("The recipe, for the dish's portions; needed without recipeId"),
       },
     },
-    async ({ name, portions, why, recipeId, ingredients, method }) => {
+    async ({ name, portions, why, recipeId, recipe }) => {
       const w = openWeek();
-      const recipe =
-        recipeId !== undefined
-          ? store.recipe(recipeId)
-          : ingredients?.length && method
-            ? store.saveRecipe({ name, servings: portions, ingredients: ingredients.join("\n"), method }, member)
-            : null;
-      if (!recipe) throw new Error(recipeId !== undefined ? `No recipe ${recipeId}` : "Give the recipe's ingredients and method, or a recipeId");
-      return text(store.addDish(w.id, { name, portions, why, recipeId: recipe.id }, member));
+      const dish = { name, portions, recipeId, recipe };
+      const problems = dishRecipeProblems(ctx, dish);
+      if (problems.length) throw new Error(`Fix the recipe and call dish_add again:\n${problems.map((p) => `- ${p}`).join("\n")}`);
+      return text(store.addDish(w.id, { name, portions, why, recipeId: dishRecipeId(ctx, dish, member) }, member));
     },
   );
 

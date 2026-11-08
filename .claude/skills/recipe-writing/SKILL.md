@@ -11,6 +11,10 @@ Write it so that following the steps in order is also the fastest way to cook it
 The shape is `Recipe` in `src/recipes/recipe.ts`; `recipeProblems` in `src/recipes/check.ts`
 rejects a recipe that breaks the rules below that code can check.
 
+The recipe is the whole meal. Whatever is served with the dish (rice, pasta, potatoes, bread,
+a salad) is in the ingredients and has steps that make it, so nothing is "to serve" without
+anyone having cooked it.
+
 ## Ingredients
 
 - Give every ingredient a short id in English, lowercase with hyphens (`onion`, `coconut-milk`,

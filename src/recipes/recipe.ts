@@ -71,3 +71,13 @@ export function amount(qty: number | undefined, unit: string | undefined): strin
   const n = Number.isInteger(qty) ? String(qty) : qty.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
   return unit ? `${n} ${unit}` : n;
 }
+
+// A recipe as plain text, for the places that show it as text (the bot's
+// answers, the web views): one ingredient per line and numbered steps.
+export function recipeText(r: Recipe): { ingredients: string; method: string } {
+  const ingredients = r.ingredients
+    .map((i) => [amount(i.qty, i.unit), i.name].filter(Boolean).join(" ") + (i.prep ? `, ${i.prep}` : "") + (i.fromPantry ? " (pantry)" : ""))
+    .join("\n");
+  const method = r.steps.map((s, n) => `${n + 1}. ${s.text}`).join("\n");
+  return { ingredients, method };
+}
