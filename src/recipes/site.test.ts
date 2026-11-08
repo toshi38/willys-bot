@@ -165,3 +165,16 @@ test("a saved text recipe whose steps name no ingredients gets the ones its text
   const parsed = SiteWeek.parse({ pickup: "2026-10-30", dishes: [{ name: "Chili", portions: 6, recipe: saved, fromText: true }] });
   assert.deepEqual(cookData(config, parsed, 0).steps.map((s) => s.uses), [["<b>1 kg</b> beef chuck, in 3 cm cubes"], ["<b>3</b> yellow onions, chopped"]]);
 });
+
+test("an ingredient an earlier step worked on is named by that step, not given its amount again", () => {
+  const uses = cookData(config, week, 0).steps.map((s) => s.uses);
+  // The curry: the squash cubed in step 1 and the chicken browned in step 2 go in at step 4.
+  assert.deepEqual(uses[3], ['butternut squash <span class="from">from step 1</span>', 'browned chicken <span class="from">from step 2</span>', '<b>2 cans</b> coconut milk <span class="home">at home</span>']);
+  // The onion chopped in step 1 is fried in step 3; salt to taste has no amount to repeat.
+  assert.ok(uses[2]!.includes('yellow onions <span class="from">from step 1</span>'));
+  assert.deepEqual(uses[5]!.slice(1), ["salt"]);
+
+  const text = fromText({ name: "Stir fry", servings: 4, ingredients: "2 packs firm tofu (400 g), in cubes\n900 g chicken breast, in strips", method: "1. Fry the tofu.\n2. Fry the chicken.\n3. Return the tofu and chicken." });
+  const sv = cookData({ title: "Mat", language: "sv" }, { pickup: "2026-10-30", dishes: [{ name: "x", portions: 4, recipe: text, fromText: true }] }, 0);
+  assert.deepEqual(sv.steps[2]!.uses, ['firm tofu <span class="from">från steg 1</span>', 'chicken breast <span class="from">från steg 2</span>']);
+});

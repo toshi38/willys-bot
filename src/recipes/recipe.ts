@@ -36,6 +36,10 @@ export const Step = z.object({
     .array(z.object({ ingredient: id, qty: z.number().positive().optional().describe("When the step uses only part of it") }))
     .default([])
     .describe("Ingredients this step uses, shown on the step"),
+  makes: z
+    .string()
+    .optional()
+    .describe('What the step leaves for a later step, for example "fried tofu" or "browned chicken"'),
   minutes: z.number().min(0).describe("Hands-on time for the step"),
   timer: Timer.optional().describe("Something to wait for after the hands-on part"),
   passive: z.boolean().optional().describe("The timer runs on its own and the cook moves on to the next steps"),

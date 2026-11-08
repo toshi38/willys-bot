@@ -103,6 +103,7 @@ h4 { font: 600 11px var(--sans); letter-spacing: .14em; text-transform: uppercas
 .ing input:checked ~ span .n { text-decoration: line-through; text-decoration-color: var(--rule); }
 .amt { font: 500 15.5px var(--serif); text-align: right; padding-right: 6px; white-space: nowrap; color: var(--tomato); font-variant-numeric: tabular-nums; }
 .prep { color: var(--ink-2); font-style: italic; font-family: var(--serif); }
+.from { color: var(--ink-2); font-style: italic; font-family: var(--serif); white-space: nowrap; }
 .home { font: 600 10px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--basil); border: 1px solid currentColor; border-radius: 4px; padding: 1px 5px; margin-left: 6px; white-space: nowrap; font-style: normal; }
 .method { list-style: none; padding: 0; margin: 0; }
 .method > li { display: grid; grid-template-columns: clamp(46px, 4vw, 64px) 1fr; padding: clamp(18px, 2vw, 26px) 0; border-bottom: 1px solid var(--rule); }

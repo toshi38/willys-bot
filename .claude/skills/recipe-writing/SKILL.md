@@ -45,6 +45,7 @@ heat until golden on all sides, about 5 minutes."
 
 - `uses` lists the ingredients the step puts in or works on, by id, so the step card shows them
   with their amounts. When a step uses only part of one ("half the garlic"), give its `qty`.
+- `makes` names what the step leaves for a later step ("browned chicken"). See below.
 - `minutes` is hands-on time. Be honest: chopping two onions is 4 minutes, not 1.
 - `timer` is anything the cook waits for: `minutes` is the shortest time, `upTo` the longest
   when it is a range, and `label` names it on the running timer ("Rice", "Curry", "Oven
@@ -73,6 +74,14 @@ Order the steps so the cook is never standing idle while something cooks:
 
 A step lists the same ingredient again when it works on it again: the onion is chopped in one
 step and fried in another. Give `qty` on a step only when it uses part of the ingredient.
+
+The site shows an ingredient's amount only on the first step that uses it. A later step that
+lists it again gets it from the last step that used it, and shows "chopped onion from step 1"
+instead. So when a step leaves something for later (the browned chicken, the fried tofu, a
+sauce), give that step `makes`, and say so in the later step's text: "Put the browned
+chicken back in", not "Add the chicken", which reads as raw chicken from the packet. A part
+the cook adds fresh in two goes ("half the garlic" now, half later) has a `qty` on each step,
+and each shows its own amount.
 
 The checker walks the steps with one cook. It flags a wait of 3 minutes or more where a later
 step could have been done instead, and a passive part that is ready 10 minutes or more before
@@ -110,9 +119,9 @@ the step that needs it.
   ],
   "steps": [
     { "id": "chop", "kind": "prep", "text": "Peel and cube the squash, chop the onions and grate the garlic and ginger.", "uses": [{ "ingredient": "squash" }, { "ingredient": "onion" }, { "ingredient": "garlic" }, { "ingredient": "ginger" }], "minutes": 10 },
-    { "id": "brown", "kind": "cook", "text": "Heat the oil in the large pot and brown the chicken in two batches until golden. Lift it out.", "uses": [{ "ingredient": "oil" }, { "ingredient": "chicken" }], "minutes": 2, "timer": { "minutes": 8, "label": "Chicken" }, "heat": "high" },
+    { "id": "brown", "kind": "cook", "text": "Heat the oil in the large pot and brown the chicken in two batches until golden. Lift it out.", "uses": [{ "ingredient": "oil" }, { "ingredient": "chicken" }], "makes": "browned chicken", "minutes": 2, "timer": { "minutes": 8, "label": "Chicken" }, "heat": "high" },
     { "id": "soften", "kind": "cook", "text": "Fry the onion, garlic and ginger in the same pot until soft.", "uses": [{ "ingredient": "onion" }, { "ingredient": "garlic" }, { "ingredient": "ginger" }], "minutes": 1, "timer": { "minutes": 4, "upTo": 5, "label": "Onion" }, "after": ["chop", "brown"], "heat": "medium" },
-    { "id": "curry", "kind": "simmer", "text": "Add the squash, chicken and coconut milk. Bring to the boil, then simmer until the squash is soft.", "uses": [{ "ingredient": "squash" }, { "ingredient": "chicken" }, { "ingredient": "coconut-milk" }], "minutes": 1, "timer": { "minutes": 20, "upTo": 25, "label": "Curry" }, "passive": true, "after": ["soften"], "heat": "low" },
+    { "id": "curry", "kind": "simmer", "text": "Add the squash, coconut milk and the browned chicken. Bring to the boil, then simmer until the squash is soft.", "uses": [{ "ingredient": "squash" }, { "ingredient": "chicken" }, { "ingredient": "coconut-milk" }], "minutes": 1, "timer": { "minutes": 20, "upTo": 25, "label": "Curry" }, "passive": true, "after": ["soften"], "heat": "low" },
     { "id": "rice", "kind": "simmer", "text": "While the curry simmers, rinse the rice, put it in the saucepan with 9 dl water and a pinch of salt, bring to the boil, then cover and simmer on low.", "uses": [{ "ingredient": "rice" }, { "ingredient": "salt" }], "minutes": 3, "timer": { "minutes": 12, "upTo": 15, "label": "Rice" }, "passive": true, "heat": "low" },
     { "id": "finish", "kind": "serve", "text": "Squeeze the lime juice into the curry, add salt to taste and serve with the rice.", "uses": [{ "ingredient": "lime" }, { "ingredient": "salt" }], "minutes": 2, "after": ["curry", "rice"] }
   ],

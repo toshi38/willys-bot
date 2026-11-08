@@ -63,6 +63,7 @@ export const STRINGS = {
     allWeeks: "All weeks",
     noWeeks: "No weeks yet.",
     pantry: "at home",
+    fromStep: "from step {n}",
     start: "Start cooking",
     back: "Back",
     nextStep: "Next step",
@@ -106,6 +107,7 @@ export const STRINGS = {
     allWeeks: "Alla veckor",
     noWeeks: "Inga veckor än.",
     pantry: "finns hemma",
+    fromStep: "från steg {n}",
     start: "Börja laga",
     back: "Bakåt",
     nextStep: "Nästa steg",
@@ -201,6 +203,31 @@ export function ingredientLine(i: Ingredient, lang: Language, qty = i.qty): stri
   const a = amount(qty, i.unit);
   const pantry = i.fromPantry ? ` <span class="home">${esc(STRINGS[lang].pantry)}</span>` : "";
   return `${a ? `<b>${esc(a)}</b> ` : ""}${esc(i.name)}${i.prep ? `<span class="prep">, ${esc(i.prep)}</span>` : ""}${pantry}`;
+}
+
+// An ingredient line without its amount, prep or notes: "firm tofu (400 g),
+// in cubes" is "firm tofu".
+const shortName = (i: Ingredient) => i.name.replace(/\([^)]*\)/g, "").split(",")[0]!.trim() || i.name;
+
+// Each step's ingredients, one line each. An ingredient an earlier step
+// already worked on comes out of that step, so it is named by the step
+// instead of given an amount again: "fried tofu from step 1". A share given
+// on the step itself ("half the garlic") is always a fresh amount.
+export function stepUses(r: Recipe, lang: Language): string[][] {
+  const byId = new Map(r.ingredients.map((i) => [i.id, i]));
+  const lastStep = new Map<string, number>();
+  return r.steps.map((s, n) => {
+    const lines = s.uses.flatMap((u) => {
+      const i = byId.get(u.ingredient);
+      if (!i) return [];
+      const prev = lastStep.get(i.id);
+      lastStep.set(i.id, n);
+      if (prev === undefined || u.qty !== undefined || i.qty === undefined) return [ingredientLine(i, lang, u.qty ?? i.qty)];
+      const what = r.steps[prev]!.makes ?? shortName(i);
+      return [`${esc(what)} <span class="from">${esc(STRINGS[lang].fromStep.replace("{n}", String(prev + 1)))}</span>`];
+    });
+    return [...new Set(lines)];
+  });
 }
 
 function timerText(s: Step, lang: Language): string {
@@ -306,13 +333,10 @@ export function recipePage(config: SiteConfig, week: SiteWeek, index: number): s
           .join("")}</ul>`,
     )
     .join("");
-  const byId = new Map(r.ingredients.map((i) => [i.id, i]));
+  const usesByStep = stepUses(r, lang);
   const steps = r.steps
     .map((s, i) => {
-      const uses = s.uses.flatMap((u) => {
-        const ing = byId.get(u.ingredient);
-        return ing ? [`<li><span>${ingredientLine(ing, lang, u.qty ?? ing.qty)}</span></li>`] : [];
-      });
+      const uses = usesByStep[i]!.map((l) => `<li><span>${l}</span></li>`);
       const extra = chips(s, lang);
       const tag = s.timer ? `<span class="tag">${esc(timerText(s, lang))}${s.passive ? `, ${esc(t.runsOnItsOwn)}` : ""}</span>` : "";
       return `<li class="k-${s.kind}"><div class="num">${i + 1}</div><div><div class="kind">${esc(t.kinds[s.kind])}${extra.length ? ` <span>· ${esc(extra.join(" · "))}</span>` : ""}</div><p>${esc(s.text)}</p>${uses.length ? `<ul class="uses">${uses.join("")}</ul>` : ""}${tag}</div></li>`;
@@ -345,21 +369,18 @@ export function cookData(config: SiteConfig, week: SiteWeek, index: number) {
   const t = STRINGS[lang];
   const d = week.dishes[index]!;
   const r = d.recipe;
-  const byId = new Map(r.ingredients.map((i) => [i.id, i]));
+  const uses = stepUses(r, lang);
   return {
     key: `${week.pickup}/${dishSlugs(week)[index]}`,
     name: d.name,
     fromText: d.fromText,
     equipment: r.equipment,
     ingredients: r.ingredients.map((i) => ingredientLine(i, lang)),
-    steps: r.steps.map((s) => ({
+    steps: r.steps.map((s, n) => ({
       id: s.id,
       kind: s.kind,
       text: s.text,
-      uses: s.uses.flatMap((u) => {
-        const i = byId.get(u.ingredient);
-        return i ? [ingredientLine(i, lang, u.qty ?? i.qty)] : [];
-      }),
+      uses: uses[n]!,
       timer: s.timer ?? null,
       timerText: timerText(s, lang),
       startLabel: s.timer ? t.startTimer.replace("{label}", lang === "en" ? s.timer.label.toLowerCase() : s.timer.label) : "",
