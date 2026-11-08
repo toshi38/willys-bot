@@ -1,0 +1,13 @@
+# Hourly: an ordered week's recipes go on the recipe site within the hour
+# after its order is placed on willys.se. The run only logs in to Willys
+# while an ordered week is waiting to go up.
+[Unit]
+Description=food-bot: publish placed orders' recipes every hour (%i)
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target

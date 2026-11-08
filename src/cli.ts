@@ -11,6 +11,7 @@ import { handleSlack, type SlackRequest } from "./plan/slack.ts";
 import { sendSurvey } from "./plan/survey.ts";
 import { apply, bookSlot, planWeek, redraftWeek, renderWeek } from "./plan/weekly.ts";
 import { siteWeek } from "./recipes/export.ts";
+import { publishWeeks } from "./recipes/publish.ts";
 
 const USAGE = `Usage: npm run wb -- <command> [--household <id>]
 
@@ -39,6 +40,7 @@ const USAGE = `Usage: npm run wb -- <command> [--household <id>]
                           (for a failed week, only after checking on willys.se that the cart is complete)
   weeks                   list recent weeks and their status
   site-week <pickup-date> print a week's recipes as the recipe site's site-data/weeks/<date>.json
+  publish                 put ordered weeks on the recipe site once their order is placed
   alert <unit>            email the operator that a systemd unit failed, with its last log lines
                           (at most once every six hours per unit; run by OnFailure=)`;
 
@@ -250,6 +252,11 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
         store.orderListItems(week.id);
       }
       console.log(await bookSlot(ctx, store.week(week.id)!, `The cart is filled: ${cart.products.length} products, total ${cart.totalPrice ?? "?"}.`));
+      return;
+    }
+    case "publish": {
+      const lines = await publishWeeks(ctx);
+      for (const line of lines.length ? lines : ["No ordered weeks to publish"]) console.log(line);
       return;
     }
     case "site-week": {

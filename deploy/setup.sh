@@ -19,5 +19,5 @@ done
 mkdir -p "$units"
 cp deploy/systemd/*.service deploy/systemd/*.timer "$units/"
 systemctl --user daemon-reload
-systemctl --user enable --now "willys-bot-snapshot@$household.timer" "willys-bot-inbox@$household.timer" "willys-bot-plan@$household.timer" "willys-bot-update@$household.timer"
+systemctl --user enable --now "willys-bot-snapshot@$household.timer" "willys-bot-inbox@$household.timer" "willys-bot-plan@$household.timer" "willys-bot-update@$household.timer" "willys-bot-publish@$household.timer"
 systemctl --user list-timers 'willys-bot-*' --no-pager

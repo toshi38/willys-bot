@@ -21,6 +21,6 @@ if grep -q '^deploy/systemd/' <<<"$changed"; then
   units="$HOME/.config/systemd/user"
   cp deploy/systemd/*.service deploy/systemd/*.timer "$units/"
   systemctl --user daemon-reload
-  systemctl --user enable --now "willys-bot-snapshot@$household.timer" "willys-bot-inbox@$household.timer" "willys-bot-plan@$household.timer" "willys-bot-update@$household.timer"
+  systemctl --user enable --now "willys-bot-snapshot@$household.timer" "willys-bot-inbox@$household.timer" "willys-bot-plan@$household.timer" "willys-bot-update@$household.timer" "willys-bot-publish@$household.timer"
 fi
 echo "updated $(git log --oneline -1 "$old" | cut -c1-60) -> $(git log --oneline -1 "$new" | cut -c1-60)"
