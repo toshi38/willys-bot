@@ -211,19 +211,24 @@ const shortName = (i: Ingredient) => i.name.replace(/\([^)]*\)/g, "").split(",")
 
 // Each step's ingredients, one line each. An ingredient an earlier step
 // already worked on comes out of that step, so it is named by the step
-// instead of given an amount again: "fried tofu from step 1". A share given
+// instead of given an amount again, by what it has become: "fried tofu
+// from step 1". A share given
 // on the step itself ("half the garlic") is always a fresh amount.
 export function stepUses(r: Recipe, lang: Language): string[][] {
   const byId = new Map(r.ingredients.map((i) => [i.id, i]));
   const lastStep = new Map<string, number>();
+  // What each ingredient is by now: a step that only adds it keeps the name
+  // an earlier step gave it.
+  const called = new Map<string, string>();
   return r.steps.map((s, n) => {
     const lines = s.uses.flatMap((u) => {
       const i = byId.get(u.ingredient);
       if (!i) return [];
       const prev = lastStep.get(i.id);
+      const what = called.get(i.id) ?? shortName(i);
       lastStep.set(i.id, n);
+      if (u.becomes) called.set(i.id, u.becomes);
       if (prev === undefined || u.qty !== undefined || i.qty === undefined) return [ingredientLine(i, lang, u.qty ?? i.qty)];
-      const what = r.steps[prev]!.makes ?? shortName(i);
       return [`${esc(what)} <span class="from">${esc(STRINGS[lang].fromStep.replace("{n}", String(prev + 1)))}</span>`];
     });
     return [...new Set(lines)];

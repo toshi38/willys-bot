@@ -124,6 +124,15 @@ test("a text step is given the ingredients it names, the food a word is the head
   assert.deepEqual(uses("Add garlic and ginger for a minute."), ["i3"]);
   assert.deepEqual(uses("Cube the butternut. Finish with lime juice."), ["i5", "i6"]);
   assert.deepEqual(uses("Stir and serve."), []);
+  // What each is called by a later step: the verb before it in its sentence.
+  assert.deepEqual(mentioned("Fry the chicken strips until cooked, set aside. Add the mushrooms.", [parseIngredient("900 g chicken breast", "c"), ingredients[0]!]), [
+    { ingredient: "c", becomes: "fried chicken" },
+    { ingredient: "i1" },
+  ]);
+  assert.deepEqual(mentioned("Cube the butternut and chop the onion.", [ingredients[4]!, parseIngredient("2 onions", "o")]), [
+    { ingredient: "i5", becomes: "cubed butternut" },
+    { ingredient: "o", becomes: "chopped onion" },
+  ]);
 });
 
 test("timers are read from Swedish methods and hours", () => {

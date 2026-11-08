@@ -175,6 +175,12 @@ test("an ingredient an earlier step worked on is named by that step, not given i
   assert.deepEqual(uses[5]!.slice(1), ["salt"]);
 
   const text = fromText({ name: "Stir fry", servings: 4, ingredients: "2 packs firm tofu (400 g), in cubes\n900 g chicken breast, in strips", method: "1. Fry the tofu.\n2. Fry the chicken.\n3. Return the tofu and chicken." });
+  const chili = fromText({ name: "Chili", servings: 6, ingredients: "1 kg beef chuck", method: "1. Brown the beef.\n2. Add the beef to the pot.\n3. Simmer the beef." });
+  assert.deepEqual(cookData(config, { pickup: "2026-10-30", dishes: [{ name: "x", portions: 6, recipe: chili, fromText: true }] }, 0).steps.map((s) => s.uses), [
+    ["<b>1 kg</b> beef chuck"],
+    ['browned beef <span class="from">from step 1</span>'],
+    ['browned beef <span class="from">from step 2</span>'],
+  ]);
   const sv = cookData({ title: "Mat", language: "sv" }, { pickup: "2026-10-30", dishes: [{ name: "x", portions: 4, recipe: text, fromText: true }] }, 0);
-  assert.deepEqual(sv.steps[2]!.uses, ['firm tofu <span class="from">från steg 1</span>', 'chicken breast <span class="from">från steg 2</span>']);
+  assert.deepEqual(sv.steps[2]!.uses, ['fried tofu <span class="from">från steg 1</span>', 'fried chicken <span class="from">från steg 2</span>']);
 });

@@ -77,6 +77,19 @@ const ALIASES: [string, string[]][] = [
 ];
 
 const words = (text: string) => text.toLowerCase().match(/[a-zåäöéü]+/g) ?? [];
+
+// What a method verb leaves an ingredient as: "Fry the tofu" makes "fried
+// tofu". English only: Swedish adjectives agree with the noun, which a word
+// list cannot do.
+const DONE: Record<string, string> = Object.fromEntries(
+  ("fry fried,brown browned,sear seared,soften softened,saute sautéed,sauté sautéed,cook cooked,boil boiled," +
+    "roast roasted,bake baked,grill grilled,toast toasted,chop chopped,cube cubed,dice diced,slice sliced," +
+    "grate grated,mince minced,peel peeled,crush crushed,mash mashed,marinate marinated,blanch blanched," +
+    "steam steamed,drain drained,rinse rinsed,shred shredded,melt melted,char charred,caramelise caramelised," +
+    "caramelize caramelized,poach poached,braise braised,stir-fry stir-fried")
+    .split(",")
+    .map((pair) => pair.split(" ") as [string, string]),
+);
 const singular = (w: string) => w.replace(/(?<=..)(es|s)$/, "");
 
 // Two words name the same food: one is the other with an ending
@@ -110,15 +123,28 @@ function foodWords(i: Ingredient): { word: string; head: boolean }[] {
 // The ingredients a step's text names, in the order of the list. When a
 // word could be two ingredients ("mushrooms" against "mushrooms" and
 // "mushroom soy"), the one it is the head of wins.
+// Each is named, for later steps, by the verb before it in its sentence
+// and the word the text calls it: "Fry the chicken strips" gives "fried
+// chicken".
 export function mentioned(text: string, ingredients: Ingredient[]): Step["uses"] {
   const known = ingredients.map((i) => ({ id: i.id, words: foodWords(i) }));
-  const used = new Set<string>();
-  for (const w of words(text).filter((w) => w.length >= 3 && !NOT_FOOD.has(w))) {
+  const used = new Map<string, string | undefined>();
+  const tokens = text.toLowerCase().match(/[a-zåäöéü]+(?:-[a-zåäöéü]+)?|[.!?;]/g) ?? [];
+  let verb: string | undefined;
+  for (const w of tokens) {
+    if (/^[.!?;]$/.test(w)) verb = undefined;
+    else if (DONE[w]) verb = DONE[w];
+    if (w.length < 3 || NOT_FOOD.has(w) || DONE[w]) continue;
     const hits = known.flatMap((k) => k.words.filter((f) => sameFood(f.word, w)).map((f) => ({ id: k.id, head: f.head })));
     const heads = hits.filter((h) => h.head);
-    for (const h of heads.length ? heads : hits) used.add(h.id);
+    for (const h of heads.length ? heads : hits) if (!used.has(h.id)) used.set(h.id, verb && `${verb} ${w}`);
   }
-  return ingredients.filter((i) => used.has(i.id)).map((i) => ({ ingredient: i.id }));
+  return ingredients
+    .filter((i) => used.has(i.id))
+    .map((i) => {
+      const becomes = used.get(i.id);
+      return { ingredient: i.id, ...(becomes ? { becomes } : {}) };
+    });
 }
 
 // What a timer read from text is called, by the step's kind.
