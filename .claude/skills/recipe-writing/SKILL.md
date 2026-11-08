@@ -56,8 +56,10 @@ heat until golden on all sides, about 5 minutes."
   when it is a range, and `label` names it on the running timer ("Rice", "Curry", "Oven
   200°C"). The step's text still says the cue ("until the squash is soft").
 - `passive: true` means the timer runs while the cook moves on: rice cooking, the oven heating,
-  a stew simmering, chicken in the oven. Leave it out for timers the cook stands over (frying
-  for 5 minutes while stirring).
+  a stew simmering, chicken in the oven, and browning or frying that only needs a turn every
+  few minutes (meat browning in batches, tofu frying): its text says to turn it between the
+  next steps. Leave it out for timers the cook stands over (a stir fry tossed all the time,
+  onions stirred so they do not catch).
 - `after` lists the earlier steps that must be finished, timers included, before this one can
   start: the browned chicken goes back into the sauce after both are done. Use it for every real
   dependency; a step without `after` can be done any time after the steps above it.
@@ -70,7 +72,9 @@ Order the steps so the cook is never standing idle while something cooks:
 
 1. Preheat the oven first, and put on anything slow to get going (a big pot of water). These
    are passive steps with timers.
-2. Do the prep while those run.
+2. Get something on the heat early. Cut only what goes in first (the meat to brown, the tofu
+   to fry), start it as a passive step, and cut the rest while it cooks. Do not cut
+   everything before anything is cooking, unless it all goes into the pan at once.
 3. Cook the main part, and start the side parts (rice, pasta, potatoes) so they finish with
    it, not half an hour before: rice goes on while the curry simmers.
 4. When a step must wait for a timer, put the next unrelated job (washing the salad, mixing the
@@ -90,8 +94,9 @@ chicken from the packet. A part the cook adds fresh in two goes ("half the garli
 later) has a `qty` on each step, and each shows its own amount.
 
 The checker walks the steps with one cook. It flags a wait of 3 minutes or more where a later
-step could have been done instead, and a passive part that is ready 10 minutes or more before
-the step that needs it.
+step could have been done instead, a passive part that is ready 10 minutes or more before
+the step that needs it, and 8 minutes or more of cutting before anything is on the heat when
+some of that cutting is for later.
 
 ## Language and style
 
@@ -124,10 +129,11 @@ the step that needs it.
     { "id": "salt", "name": "salt" }
   ],
   "steps": [
-    { "id": "chop", "kind": "prep", "text": "Peel and cube the squash, chop the onions and grate the garlic and ginger.", "uses": [{ "ingredient": "squash" }, { "ingredient": "onion" }, { "ingredient": "garlic" }, { "ingredient": "ginger" }], "minutes": 10 },
-    { "id": "brown", "kind": "cook", "text": "Heat the oil in the large pot and brown the chicken in two batches until golden. Lift it out.", "uses": [{ "ingredient": "oil" }, { "ingredient": "chicken", "becomes": "browned chicken" }], "minutes": 2, "timer": { "minutes": 8, "label": "Chicken" }, "heat": "high" },
-    { "id": "soften", "kind": "cook", "text": "Fry the onion, garlic and ginger in the same pot until soft.", "uses": [{ "ingredient": "onion" }, { "ingredient": "garlic" }, { "ingredient": "ginger" }], "minutes": 1, "timer": { "minutes": 4, "upTo": 5, "label": "Onion" }, "after": ["chop", "brown"], "heat": "medium" },
-    { "id": "curry", "kind": "simmer", "text": "Add the squash, coconut milk and the browned chicken. Bring to the boil, then simmer until the squash is soft.", "uses": [{ "ingredient": "squash" }, { "ingredient": "chicken" }, { "ingredient": "coconut-milk" }], "minutes": 1, "timer": { "minutes": 20, "upTo": 25, "label": "Curry" }, "passive": true, "after": ["soften"], "heat": "low" },
+    { "id": "cut-chicken", "kind": "prep", "text": "Cut the chicken into bite-size pieces.", "uses": [{ "ingredient": "chicken", "becomes": "chicken pieces" }], "minutes": 5 },
+    { "id": "brown", "kind": "cook", "text": "Heat the oil in the large pot on high and brown the chicken in two batches, turning the pieces when they come away from the pot, while you cut the vegetables. Lift each batch onto a plate.", "uses": [{ "ingredient": "oil" }, { "ingredient": "chicken", "becomes": "browned chicken" }], "minutes": 2, "timer": { "minutes": 10, "upTo": 12, "label": "Chicken" }, "passive": true, "heat": "high" },
+    { "id": "chop", "kind": "prep", "text": "Peel and cube the squash, chop the onions and grate the garlic and ginger.", "uses": [{ "ingredient": "squash", "becomes": "squash cubes" }, { "ingredient": "onion", "becomes": "chopped onion" }, { "ingredient": "garlic", "becomes": "grated garlic" }, { "ingredient": "ginger", "becomes": "grated ginger" }], "minutes": 10 },
+    { "id": "soften", "kind": "cook", "text": "Turn the heat to medium and fry the onion, garlic and ginger in the same pot until soft.", "uses": [{ "ingredient": "onion" }, { "ingredient": "garlic" }, { "ingredient": "ginger" }], "minutes": 1, "timer": { "minutes": 4, "upTo": 5, "label": "Onion" }, "after": ["chop", "brown"], "heat": "medium" },
+    { "id": "curry", "kind": "simmer", "text": "Add the squash, the coconut milk and the browned chicken. Bring to the boil, then simmer until the squash is soft.", "uses": [{ "ingredient": "squash" }, { "ingredient": "coconut-milk" }, { "ingredient": "chicken", "becomes": "curry" }], "minutes": 1, "timer": { "minutes": 20, "upTo": 25, "label": "Curry" }, "passive": true, "after": ["soften"], "heat": "low" },
     { "id": "rice", "kind": "simmer", "text": "While the curry simmers, rinse the rice, put it in the saucepan with 9 dl water and a pinch of salt, bring to the boil, then cover and simmer on low.", "uses": [{ "ingredient": "rice" }, { "ingredient": "salt" }], "minutes": 3, "timer": { "minutes": 12, "upTo": 15, "label": "Rice" }, "passive": true, "heat": "low" },
     { "id": "finish", "kind": "serve", "text": "Squeeze the lime juice into the curry, add salt to taste and serve with the rice.", "uses": [{ "ingredient": "lime" }, { "ingredient": "salt" }], "minutes": 2, "after": ["curry", "rice"] }
   ],

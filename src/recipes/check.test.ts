@@ -20,11 +20,12 @@ test("the skill's example recipe passes every check", () => {
 
 test("the timeline overlaps passive steps and counts the cook's busy time", () => {
   const t = timeline(example);
-  // Chop 10, brown 2 plus 8 at the stove, soften 5, curry 1 then 20 on its
-  // own, rice goes on during the curry, serve 2 once the curry is done.
-  assert.equal(t.totalMinutes, 48);
-  assert.equal(t.activeMinutes, 31);
-  assert.deepEqual(t.steps.get("rice"), { start: 26, end: 41 });
+  // Cut the chicken 5, brown it 2 then 10 on its own while the vegetables
+  // are chopped (10), soften 5, curry 1 then 20 on its own, rice goes on
+  // during the curry, serve 2 once the curry is done.
+  assert.equal(t.totalMinutes, 45);
+  assert.equal(t.activeMinutes, 28);
+  assert.deepEqual(t.steps.get("rice"), { start: 23, end: 38 });
   assert.deepEqual(t.idle, []);
   assert.deepEqual(t.early, []);
 });
@@ -40,8 +41,8 @@ test("references must point at real ingredients and earlier steps", () => {
     r.steps[0]!.after = ["finish"];
   });
   const problems = recipeProblems(r);
-  assert.ok(problems.includes("Step chop uses shallot, which is not an ingredient."), problems.join("\n"));
-  assert.ok(problems.includes("Step chop is after finish, which is not an earlier step."), problems.join("\n"));
+  assert.ok(problems.includes("Step cut-chicken uses shallot, which is not an ingredient."), problems.join("\n"));
+  assert.ok(problems.includes("Step cut-chicken is after finish, which is not an earlier step."), problems.join("\n"));
 });
 
 test("every ingredient is used, and partial amounts do not add up to more than the list", () => {
@@ -87,7 +88,7 @@ test("idle waits and parts done far too early are flagged with what to move", ()
     const rice = r.steps.find((s) => s.id === "rice")!;
     r.steps = [rice, ...r.steps.filter((s) => s.id !== "rice")];
   });
-  assert.deepEqual(recipeProblems(early), ["Step rice is ready 34 minutes before step finish needs it: start it later so it is not left standing."]);
+  assert.deepEqual(recipeProblems(early), ["Step rice is ready 31 minutes before step finish needs it: start it later so it is not left standing."]);
 });
 
 test("a recipe saved as text reads as steps with the timers its method mentions", () => {
@@ -159,4 +160,22 @@ test("ingredients saved as text have their amount, unit and pantry note read out
   assert.deepEqual(p("450 till 500 g babyspenat"), { id: "x", name: "450 till 500 g babyspenat" });
   assert.deepEqual(p("salt, pepper, oil"), { id: "x", name: "salt, pepper, oil" });
   assert.deepEqual(p("rice to serve (pantry)"), { id: "x", name: "rice to serve", fromPantry: true });
+});
+
+test("cutting everything before anything is on the heat is flagged, when some of it is for later", () => {
+  // The vegetables chopped first, the chicken only browned once they are done.
+  const cutFirst = with_((r) => {
+    const chop = r.steps.find((s) => s.id === "chop")!;
+    r.steps = [chop, ...r.steps.filter((s) => s.id !== "chop")];
+  });
+  assert.ok(
+    recipeProblems(cutFirst).includes(
+      "Nothing is on the heat for the first 15 minutes: step chop cuts things step brown does not need. Start step brown as soon as its own ingredients are ready (passive, when it only needs turning now and then) and do that cutting while it cooks.",
+    ),
+  );
+  // Cutting only what goes in first is fine, however long it takes.
+  const slowCut = with_((r) => {
+    r.steps.find((s) => s.id === "cut-chicken")!.minutes = 12;
+  });
+  assert.deepEqual(recipeProblems(slowCut), []);
 });

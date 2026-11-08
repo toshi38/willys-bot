@@ -87,18 +87,18 @@ test("the week page counts the dinners and colours each dish and its steps", () 
   assert.match(html, /<h1>Three dinners<\/h1>/);
   assert.match(html, /Fri 30 Oct to Thu 5 Nov/);
   assert.match(html, /class="dish-card d-0" href="coconut-chicken-and-butternut-curry-with-rice\/"/);
-  assert.match(html, /<span>48 min<\/span><span>31 min hands-on<\/span><span>6 portions<\/span>/);
+  assert.match(html, /<span>45 min<\/span><span>28 min hands-on<\/span><span>6 portions<\/span>/);
   assert.match(html, /<span>2 steps<\/span><span>4 portions<\/span>/, "a text recipe shows its step count");
   assert.match(html, /<i class="k-prep"><\/i><i class="k-cook"><\/i>/);
 });
 
 test("a structured recipe shows its times, amounts, steps by kind and timers", () => {
   const html = recipePage(config, week, 0);
-  assert.match(html, /<b>48<small> min<\/small><\/b><span>Total<\/span>/);
-  assert.match(html, /<b>31<small> min<\/small><\/b><span>Hands-on<\/span>/);
+  assert.match(html, /<b>45<small> min<\/small><\/b><span>Total<\/span>/);
+  assert.match(html, /<b>28<small> min<\/small><\/b><span>Hands-on<\/span>/);
   assert.match(html, /<span class="amt">1400 g<\/span><span><span class="n">chicken thigh fillets<\/span><span class="prep">, in bite-size pieces<\/span>/);
   assert.match(html, /<span class="amt">6 dl<\/span><span><span class="n">jasmine rice<\/span><span class="home">at home<\/span>/);
-  assert.match(html, /<li class="k-simmer"><div class="num">4<\/div><div><div class="kind">Simmer <span>· Low heat<\/span><\/div>/);
+  assert.match(html, /<li class="k-simmer"><div class="num">5<\/div><div><div class="kind">Simmer <span>· Low heat<\/span><\/div>/);
   assert.match(html, /<span class="tag">20 to 25 min, runs on its own<\/span>/);
   assert.match(html, /<a class="cta" href="cook\/">/);
   assert.match(html, /<div class="notes">Freezes well without the rice\.<\/div>/);
@@ -156,9 +156,11 @@ test("leaks: secret values, emails and token-shaped strings are caught, recipes 
 
 test("each step on the recipe page lists what goes in, with its amount", () => {
   const html = recipePage(config, week, 0);
+  const cut = html.split('<li class="k-prep">')[1]!.split("</li></ul>")[0]!;
+  assert.match(cut, /<b>1400 g<\/b> chicken thigh fillets/);
   const brown = html.split('<li class="k-cook">')[1]!.split("</li></ul>")[0]!;
   assert.match(brown, /<b>2 tbsp<\/b> oil/);
-  assert.match(brown, /<b>1400 g<\/b> chicken thigh fillets/);
+  assert.match(brown, /chicken pieces <span class="from">from step 1<\/span>/);
 });
 
 test("a saved text recipe whose steps name no ingredients gets the ones its text mentions", () => {
@@ -170,11 +172,11 @@ test("a saved text recipe whose steps name no ingredients gets the ones its text
 
 test("an ingredient an earlier step worked on is named by that step, not given its amount again", () => {
   const uses = cookData(config, week, 0).steps.map((s) => s.uses);
-  // The curry: the squash cubed in step 1 and the chicken browned in step 2 go in at step 4.
-  assert.deepEqual(uses[3], ['butternut squash <span class="from">from step 1</span>', 'browned chicken <span class="from">from step 2</span>', '<b>2 cans</b> coconut milk <span class="home">at home</span>']);
+  // The curry: the squash cubed in step 3 and the chicken browned in step 2 go in at step 5.
+  assert.deepEqual(uses[4], ['squash cubes <span class="from">from step 3</span>', '<b>2 cans</b> coconut milk <span class="home">at home</span>', 'browned chicken <span class="from">from step 2</span>']);
   // The onion chopped in step 1 is fried in step 3; salt to taste has no amount to repeat.
-  assert.ok(uses[2]!.includes('yellow onions <span class="from">from step 1</span>'));
-  assert.deepEqual(uses[5]!.slice(1), ["salt"]);
+  assert.ok(uses[3]!.includes('chopped onion <span class="from">from step 3</span>'));
+  assert.deepEqual(uses[6]!.slice(1), ["salt"]);
 
   const text = fromText({ name: "Stir fry", servings: 4, ingredients: "2 packs firm tofu (400 g), in cubes\n900 g chicken breast, in strips", method: "1. Fry the tofu.\n2. Fry the chicken.\n3. Return the tofu and chicken." });
   const chili = fromText({ name: "Chili", servings: 6, ingredients: "1 kg beef chuck", method: "1. Brown the beef.\n2. Add the beef to the pot.\n3. Simmer the beef." });
@@ -195,6 +197,6 @@ test("a week from the database reads as the site's week, structured recipes as t
   store.addDish("2026-11-06", { name: "Curry", portions: 6, recipeId: structured.id }, "planner");
   store.addDish("2026-11-06", { name: "Soup", portions: 4, recipeId: text.id }, "planner");
   const w = SiteWeek.parse(siteWeek(store, "2026-11-06"));
-  assert.deepEqual(w.dishes.map((d) => [d.name, d.fromText, d.recipe.steps.length]), [["Curry", false, 6], ["Soup", true, 2]]);
+  assert.deepEqual(w.dishes.map((d) => [d.name, d.fromText, d.recipe.steps.length]), [["Curry", false, 7], ["Soup", true, 2]]);
   assert.deepEqual(w.dishes[0]!.recipe, example);
 });

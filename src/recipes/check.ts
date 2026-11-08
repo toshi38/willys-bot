@@ -52,6 +52,32 @@ export function timeline(recipe: Recipe): Timeline {
   return { totalMinutes, activeMinutes: active, steps, idle, early };
 }
 
+const HEAT: Step["kind"][] = ["preheat", "cook", "simmer", "bake"];
+
+// The first step on the heat, when it starts 8 minutes or more in and the
+// prep before it includes cutting it does not need: the cook could have
+// had it cooking while they cut.
+export function lateHeat(r: Recipe, t: Timeline): { step: string; minutes: number; cutting: string[] } | null {
+  const first = r.steps.findIndex((s) => HEAT.includes(s.kind));
+  if (first <= 0) return null;
+  const heat = r.steps[first]!;
+  const minutes = t.steps.get(heat.id)!.start;
+  if (minutes < 8) return null;
+  const needed = new Set<string>();
+  const need = (id: string) => {
+    if (needed.has(id)) return;
+    needed.add(id);
+    for (const a of r.steps.find((s) => s.id === id)?.after ?? []) need(a);
+  };
+  for (const a of heat.after ?? []) need(a);
+  const goesIn = new Set(heat.uses.map((u) => u.ingredient));
+  const cutting = r.steps
+    .slice(0, first)
+    .filter((s) => s.kind === "prep" && !needed.has(s.id) && !s.uses.some((u) => goesIn.has(u.ingredient)))
+    .map((s) => s.id);
+  return cutting.length ? { step: heat.id, minutes, cutting } : null;
+}
+
 const NEEDS_TIMER: Step["kind"][] = ["preheat", "simmer", "bake", "rest"];
 
 // What is wrong with a recipe, each problem a sentence the planner can act
@@ -101,6 +127,12 @@ export function recipeProblems(input: unknown): string[] {
     }
     for (const w of t.early) {
       problems.push(`Step ${w.step} is ready ${w.minutes} minutes before step ${w.neededBy} needs it: start it later so it is not left standing.`);
+    }
+    const late = lateHeat(r, t);
+    if (late) {
+      problems.push(
+        `Nothing is on the heat for the first ${late.minutes} minutes: step${late.cutting.length > 1 ? "s" : ""} ${late.cutting.join(", ")} cut${late.cutting.length > 1 ? "" : "s"} things step ${late.step} does not need. Start step ${late.step} as soon as its own ingredients are ready (passive, when it only needs turning now and then) and do that cutting while it cooks.`,
+      );
     }
   }
   return problems;

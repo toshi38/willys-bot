@@ -90,7 +90,7 @@ test("a step shows its kind, heat, ingredients, the next step and its timer butt
   assert.match(html, /<p class="next-up"><b>Next<\/b>Squeeze the lime/);
   assert.match(html, /^<div class="main">.*<\/div><div class="side">.*<\/div>$/s, "the text and the ingredients are separate columns");
   assert.equal(Cook.goHtml(data, state), '<button class="go" data-act="go">Start rice timer <small>12 to 15 min</small></button>');
-  assert.equal(Cook.countLabel(data, state), "Step 5 of 6");
+  assert.equal(Cook.countLabel(data, state), "Step 6 of 7");
   assert.equal(Cook.kindOf(data, state), "simmer");
   Cook.start(state, step("rice"), 0);
   assert.match(Cook.goHtml(data, state), /disabled>Timer running</);
@@ -122,7 +122,7 @@ test("the timer strip shows running and ringing timers and the next one to start
 });
 
 test("progress marks done, current and later steps", () => {
-  assert.equal(Cook.progressHtml(data, { pos: 2, timers: [] }), '<i class="done"></i><i class="now"></i>' + '<i class=""></i>'.repeat(4));
+  assert.equal(Cook.progressHtml(data, { pos: 2, timers: [] }), '<i class="done"></i><i class="now"></i>' + '<i class=""></i>'.repeat(5));
 });
 
 test("text from the recipe is escaped in cook mode", () => {
