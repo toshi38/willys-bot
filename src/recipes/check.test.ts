@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { recipeProblems, timeline } from "./check.ts";
-import { fromText, parseIngredient } from "./legacy.ts";
+import { fromText, mentioned, parseIngredient } from "./legacy.ts";
 import { Recipe, amount } from "./recipe.ts";
 
 const skill = readFileSync(new URL("../../.claude/skills/recipe-writing/SKILL.md", import.meta.url), "utf8");
@@ -106,6 +106,24 @@ test("a recipe saved as text reads as steps with the timers its method mentions"
   assert.deepEqual(r.steps.map((s) => s.kind), ["prep", "cook", "simmer", "serve"]);
   assert.deepEqual(r.steps[2]!.timer, { minutes: 25, upTo: 30, label: "Simmer" });
   assert.equal(r.steps[0]!.timer, undefined);
+  assert.deepEqual(r.steps.map((s) => s.uses.map((u) => u.ingredient)), [["i2"], ["i1"], ["i1", "i2"], ["i3"]]);
+});
+
+test("a text step is given the ingredients it names, the food a word is the head of winning", () => {
+  const ingredients = [
+    "250 g mushrooms, sliced",
+    "Mrs Chang mushroom soy (at home)",
+    "garlic, a thumb of ginger, grated",
+    "cornflour, 1 tsp sugar, chili flakes",
+    "1 kg butternutpumpa",
+    "limes (juice and zest)",
+  ].map((l, i) => parseIngredient(l, `i${i + 1}`));
+  const uses = (text: string) => mentioned(text, ingredients).map((u) => u.ingredient);
+  assert.deepEqual(uses("Fry the onion and mushrooms."), ["i1"]);
+  assert.deepEqual(uses("Mix the soy, sugar and chili."), ["i2", "i4"]);
+  assert.deepEqual(uses("Add garlic and ginger for a minute."), ["i3"]);
+  assert.deepEqual(uses("Cube the butternut. Finish with lime juice."), ["i5", "i6"]);
+  assert.deepEqual(uses("Stir and serve."), []);
 });
 
 test("timers are read from Swedish methods and hours", () => {

@@ -105,7 +105,7 @@ h4 { font: 600 11px var(--sans); letter-spacing: .14em; text-transform: uppercas
 .prep { color: var(--ink-2); font-style: italic; font-family: var(--serif); }
 .home { font: 600 10px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--basil); border: 1px solid currentColor; border-radius: 4px; padding: 1px 5px; margin-left: 6px; white-space: nowrap; font-style: normal; }
 .method { list-style: none; padding: 0; margin: 0; }
-.method li { display: grid; grid-template-columns: clamp(46px, 4vw, 64px) 1fr; padding: clamp(18px, 2vw, 26px) 0; border-bottom: 1px solid var(--rule); }
+.method > li { display: grid; grid-template-columns: clamp(46px, 4vw, 64px) 1fr; padding: clamp(18px, 2vw, 26px) 0; border-bottom: 1px solid var(--rule); }
 .method .num { font: 400 clamp(34px, 1.5vw + 26px, 52px)/0.9 var(--serif); font-variation-settings: "opsz" 144; color: var(--k); }
 .kind { font: 600 11px var(--sans); letter-spacing: .16em; text-transform: uppercase; color: var(--k); }
 .kind span { color: var(--ink-2); }
@@ -154,6 +154,8 @@ body.cook { height: 100dvh; overflow: hidden; }
 .big { font: 400 clamp(28px, 2.4vw + 18px, 52px)/1.2 var(--serif); letter-spacing: -.015em; margin: 14px 0 18px; font-variation-settings: "opsz" 72; max-width: 24ch; text-wrap: pretty; }
 .uses { list-style: none; padding: 0; margin: 0; }
 .uses li { display: flex; gap: 10px; padding: 8px 0; font-size: clamp(16px, 0.4vw + 15px, 19px); border-bottom: 1px dotted var(--rule); }
+.method .uses { margin: 10px 0 4px; max-width: 62ch; }
+.method .uses li { font-size: clamp(14px, 0.3vw + 13px, 16px); padding: 4px 0; }
 .uses li::before { content: ""; width: 7px; height: 7px; border-radius: 50%; margin-top: .6em; flex: none; background: var(--k); }
 .aside { margin-top: 16px; font: italic 300 clamp(16px, 0.5vw + 14px, 20px)/1.4 var(--serif); color: var(--ink-2); }
 .waits { margin-top: 16px; padding: 10px 14px; border-radius: 12px; background: var(--ks); font-size: 15px; }

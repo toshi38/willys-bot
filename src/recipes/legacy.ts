@@ -2,8 +2,8 @@ import type { Ingredient, Recipe, Step, Timer } from "./recipe.ts";
 
 // Recipes saved as text (one ingredient per line and a numbered method)
 // read as a Recipe, so the site can show them and cook mode can offer the
-// timers the method mentions. Steps use no ingredients: the site lists
-// them all up front instead.
+// timers the method mentions. Each step is given the ingredients its text
+// names, so cook mode shows their amounts on the step.
 
 const UNITS: [RegExp, number][] = [
   [/^(min|mins|minute|minutes|minut|minuter)$/, 1],
@@ -50,6 +50,77 @@ export function parseIngredient(line: string, id: string): Ingredient {
   return { id, name: m[3]!, qty: a! / b!, ...(m[2] ? { unit: m[2] } : {}), ...(fromPantry ? { fromPantry } : {}) };
 }
 
+// Words in an ingredient line that say how it is prepared or how much,
+// not what it is.
+const NOT_FOOD = new Set(
+  ("a an and or of to in on for with at the into about taste serve serving home pantry gluten free " +
+    "chopped sliced diced cubed cubes cube grated minced crushed drained rinsed peeled patted dry halved quartered " +
+    "strips strip moons half thumb pieces piece finely roughly thinly large small fresh ground whole " +
+    "skinless boneless frozen yellow red green white juice zest " +
+    "g kg hg dl cl ml l msk tsk krm tbsp tsp st can cans tin tins pack packs punnet punnets clove cloves " +
+    "och eller till att med på i en ett hackad hackade skivad skivade riven rivna färsk färska gul gula röd röda vitt servering")
+    .split(" "),
+);
+
+// Swedish ingredient words that English methods name differently.
+const ALIASES: [string, string[]][] = [
+  ["kyckling", ["chicken"]],
+  ["nötfärs", ["mince", "beef"]],
+  ["nöt", ["beef"]],
+  ["fläsk", ["pork"]],
+  ["vitlök", ["garlic"]],
+  ["lök", ["onion"]],
+  ["ingefära", ["ginger"]],
+  ["pumpa", ["squash", "pumpkin"]],
+  ["ris", ["rice"]],
+  ["lime", ["lime"]],
+];
+
+const words = (text: string) => text.toLowerCase().match(/[a-zåäöéü]+/g) ?? [];
+const singular = (w: string) => w.replace(/(?<=..)(es|s)$/, "");
+
+// Two words name the same food: one is the other with an ending
+// ("onion", "onions"), or they share a long start, as a Swedish compound
+// and its short form do ("kycklinglårfilé", "kycklingen").
+function sameFood(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [sa, sb] = [singular(a), singular(b)];
+  if (sa.length >= 4 && b.startsWith(sa)) return true;
+  if (sb.length >= 4 && a.startsWith(sb)) return true;
+  let n = 0;
+  while (n < a.length && a[n] === b[n]) n++;
+  return n >= 6;
+}
+
+// The words an ingredient line is known by, the last word of each part
+// ("firm tofu", "chili flakes") marked as its head. A line can hold several
+// foods ("garlic, a thumb of ginger, grated").
+function foodWords(i: Ingredient): { word: string; head: boolean }[] {
+  const parts = i.name.replace(/\([^)]*\)/g, " ").split(/,|\bor\b|\beller\b/);
+  return parts.flatMap((part) => {
+    const ws = words(part).filter((w) => w.length >= 3 && !NOT_FOOD.has(w));
+    return ws.flatMap((w, n) => {
+      const head = n === ws.length - 1;
+      const aliases = ALIASES.filter(([sv]) => w.startsWith(sv) || w.endsWith(sv)).flatMap(([, en]) => en);
+      return [{ word: w, head }, ...aliases.map((a) => ({ word: a, head }))];
+    });
+  });
+}
+
+// The ingredients a step's text names, in the order of the list. When a
+// word could be two ingredients ("mushrooms" against "mushrooms" and
+// "mushroom soy"), the one it is the head of wins.
+export function mentioned(text: string, ingredients: Ingredient[]): Step["uses"] {
+  const known = ingredients.map((i) => ({ id: i.id, words: foodWords(i) }));
+  const used = new Set<string>();
+  for (const w of words(text).filter((w) => w.length >= 3 && !NOT_FOOD.has(w))) {
+    const hits = known.flatMap((k) => k.words.filter((f) => sameFood(f.word, w)).map((f) => ({ id: k.id, head: f.head })));
+    const heads = hits.filter((h) => h.head);
+    for (const h of heads.length ? heads : hits) used.add(h.id);
+  }
+  return ingredients.filter((i) => used.has(i.id)).map((i) => ({ ingredient: i.id }));
+}
+
 // What a timer read from text is called, by the step's kind.
 const LABELS: Record<Step["kind"], string> = { preheat: "Oven", prep: "Prep", cook: "Cook", simmer: "Simmer", bake: "Oven", rest: "Rest", assemble: "Assemble", serve: "Serve" };
 
@@ -66,7 +137,7 @@ export function fromText(r: { name: string; servings: number | null; ingredients
   const steps: Step[] = lines.map((text, i) => {
     const kind = KINDS.find(([re]) => re.test(text))?.[1] ?? "cook";
     const timer = findTimer(text, LABELS[kind]);
-    return { id: `s${i + 1}`, kind, text, uses: [], minutes: 0, ...(timer ? { timer } : {}) };
+    return { id: `s${i + 1}`, kind, text, uses: mentioned(text, ingredients), minutes: 0, ...(timer ? { timer } : {}) };
   });
   if (steps.length === 1) steps.push({ id: "s2", kind: "serve", text: "Serve.", uses: [], minutes: 0 });
   return {

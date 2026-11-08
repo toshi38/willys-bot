@@ -151,3 +151,17 @@ test("leaks: secret values, emails and token-shaped strings are caught, recipes 
   assert.deepEqual(leakProblems("week", "x Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZg9Q y"), ["week contains a long token-like string (Zm9vYm...)."]);
   assert.ok(leakProblems("week", "https://user:pass@example.com/x").includes("week contains what looks like a URL with credentials."));
 });
+
+test("each step on the recipe page lists what goes in, with its amount", () => {
+  const html = recipePage(config, week, 0);
+  const brown = html.split('<li class="k-cook">')[1]!.split("</li></ul>")[0]!;
+  assert.match(brown, /<b>2 tbsp<\/b> oil/);
+  assert.match(brown, /<b>1400 g<\/b> chicken thigh fillets/);
+});
+
+test("a saved text recipe whose steps name no ingredients gets the ones its text mentions", () => {
+  const saved = fromText({ name: "Chili", servings: 6, ingredients: "1 kg beef chuck, in 3 cm cubes\n3 yellow onions, chopped", method: "1. Brown the beef.\n2. Soften the onions." });
+  for (const s of saved.steps) s.uses = [];
+  const parsed = SiteWeek.parse({ pickup: "2026-10-30", dishes: [{ name: "Chili", portions: 6, recipe: saved, fromText: true }] });
+  assert.deepEqual(cookData(config, parsed, 0).steps.map((s) => s.uses), [["<b>1 kg</b> beef chuck, in 3 cm cubes"], ["<b>3</b> yellow onions, chopped"]]);
+});

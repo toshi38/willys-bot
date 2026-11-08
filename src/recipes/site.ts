@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { timeline } from "./check.ts";
+import { mentioned } from "./legacy.ts";
 import { amount, Recipe, type Ingredient, type Step } from "./recipe.ts";
 
 // The public recipe site: an index of weeks, a page per week with its
@@ -12,17 +13,26 @@ import { amount, Recipe, type Ingredient, type Step } from "./recipe.ts";
 export const SiteWeek = z.object({
   pickup: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   dishes: z.array(
-    z.object({
-      name: z.string().min(1),
-      portions: z.number().int().positive(),
-      recipe: Recipe,
-      // Read from a recipe saved as text, so its steps carry no
-      // ingredients and cook mode lists them all first.
-      fromText: z.boolean().default(false),
-    }),
+    z
+      .object({
+        name: z.string().min(1),
+        portions: z.number().int().positive(),
+        recipe: Recipe,
+        // Read from a recipe saved as text, so its steps have only the
+        // ingredients their text names and no hands-on times.
+        fromText: z.boolean().default(false),
+      })
+      .transform((d) => (d.fromText ? { ...d, recipe: withMentioned(d.recipe) } : d)),
   ),
 });
-export type SiteWeek = z.infer<typeof SiteWeek>;
+export type SiteWeek = z.output<typeof SiteWeek>;
+
+// A text recipe whose steps name no ingredients gets the ones each step's
+// text mentions, so its steps show what goes in and how much.
+function withMentioned(r: Recipe): Recipe {
+  if (r.steps.some((s) => s.uses.length)) return r;
+  return { ...r, steps: r.steps.map((s) => ({ ...s, uses: mentioned(s.text, r.ingredients) })) };
+}
 
 export const SiteConfig = z.object({
   title: z.string().default("Food"),
@@ -296,11 +306,16 @@ export function recipePage(config: SiteConfig, week: SiteWeek, index: number): s
           .join("")}</ul>`,
     )
     .join("");
+  const byId = new Map(r.ingredients.map((i) => [i.id, i]));
   const steps = r.steps
     .map((s, i) => {
+      const uses = s.uses.flatMap((u) => {
+        const ing = byId.get(u.ingredient);
+        return ing ? [`<li><span>${ingredientLine(ing, lang, u.qty ?? ing.qty)}</span></li>`] : [];
+      });
       const extra = chips(s, lang);
       const tag = s.timer ? `<span class="tag">${esc(timerText(s, lang))}${s.passive ? `, ${esc(t.runsOnItsOwn)}` : ""}</span>` : "";
-      return `<li class="k-${s.kind}"><div class="num">${i + 1}</div><div><div class="kind">${esc(t.kinds[s.kind])}${extra.length ? ` <span>· ${esc(extra.join(" · "))}</span>` : ""}</div><p>${esc(s.text)}</p>${tag}</div></li>`;
+      return `<li class="k-${s.kind}"><div class="num">${i + 1}</div><div><div class="kind">${esc(t.kinds[s.kind])}${extra.length ? ` <span>· ${esc(extra.join(" · "))}</span>` : ""}</div><p>${esc(s.text)}</p>${uses.length ? `<ul class="uses">${uses.join("")}</ul>` : ""}${tag}</div></li>`;
     })
     .join("");
   const stats = [
