@@ -24,8 +24,9 @@ export interface Product {
   brand?: string;
   // Willys's category names, top first.
   category?: string[];
-  // The product page's Innehållsförteckning.
+  // The product page's Innehållsförteckning and labels.
   ingredients?: string;
+  labels?: string[];
 }
 
 export const CATALOG: Product[] = [
@@ -90,14 +91,14 @@ export class FakeWillys {
     if (route === "GET /search/clean") {
       const q = (url.searchParams.get("q") ?? "").toLowerCase();
       const words = q.split(/\s+/).filter(Boolean);
-      return send(res, 200, page(this.catalog.filter((p) => words.some((w) => p.name.toLowerCase().includes(w) || p.code.toLowerCase().includes(w)))));
+      return send(res, 200, page(this.catalog.filter((p) => words.some((w) => [p.name, p.code, p.brand ?? ""].some((field) => field.toLowerCase().includes(w))))));
     }
     if (route.startsWith("GET /search/campaigns/")) return send(res, 200, page(url.pathname.endsWith("online") ? this.catalog.filter((p) => p.offer) : []));
     if (route.startsWith("GET /axfood/rest/p/")) {
       const p = this.catalog.find((c) => c.code === decodeURIComponent(url.pathname.split("/").pop()!));
       if (!p) return send(res, 404, { error: "no such product" });
       const crumbs = (p.category ?? ["Skafferi"]).map((name, i) => ({ name, categoryCode: `N${i + 1}` }));
-      return send(res, 200, { code: p.code, name: p.name, manufacturer: p.brand ?? null, ingredients: p.ingredients ?? "", breadCrumbs: [{ name: "Alla varor", categoryCode: "N00" }, ...crumbs, { name: p.name, categoryCode: null }] });
+      return send(res, 200, { code: p.code, name: p.name, manufacturer: p.brand ?? null, ingredients: p.ingredients ?? "", extendedLabels: (p.labels ?? []).map((name) => ({ name })), breadCrumbs: [{ name: "Alla varor", categoryCode: "N00" }, ...crumbs, { name: p.name, categoryCode: null }] });
     }
     if (route === "GET /axfood/rest/cart") return send(res, 200, this.#cart());
     if (route === "POST /axfood/rest/cart/addProducts") {

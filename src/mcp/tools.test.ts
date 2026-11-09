@@ -121,6 +121,40 @@ test("an avoided brand or a gluten risk is refused unless the exception is state
   assert.equal(store.items(NEXT).length, 1);
 });
 
+test("gluten is judged from the product's Willys ingredients when it has them", async () => {
+  const store = new Store(":memory:");
+  weekWithDish(store, NEXT);
+  const pages: Record<string, { ingredients: string | null; labels: string[] }> = {
+    SAKURA_ST: { ingredients: "Vatten, SOJABÖNOR, majsmjöl, salt.", labels: [] },
+    KIKKO_ST: { ingredients: "Vatten, SOJABÖNOR, VETE, salt.", labels: [] },
+    CRISP_ST: { ingredients: "SOJAolja, chili, lök, salt.", labels: [] },
+  };
+  const codes = Object.keys(pages);
+  for (const code of codes) store.recordProduct({ code, name: code === "CRISP_ST" ? "Crispy Chili In Oil" : "Japansk Soja", priceValue: 25 }, "regular");
+  const fetched: string[] = [];
+  const willys = {
+    productInfo: async (code: string) => (fetched.push(code), { code, name: code, brand: null, size: null, category: "Skafferi", diet: null, description: null, origin: null, ...pages[code] }),
+    search: async () => ({ results: codes.map((code) => ({ code, name: store.productName(code), priceValue: 25 })), pagination: { numberOfPages: 1 } }),
+  };
+  const server = buildServer({ store, household: ruled, willys } as unknown as Context, "Carin");
+  const client = new Client({ name: "test", version: "1" });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(a), client.connect(b)]);
+  const call = async (name: string, args: Record<string, unknown>) => {
+    const res = (await client.callTool({ name, arguments: args })) as { isError?: boolean; content: { text: string }[] };
+    return { error: res.isError === true, text: res.content[0].text };
+  };
+  const found = JSON.parse((await call("search_products", { query: "soja" })).text) as { code: string; containsGluten?: string; mayContainGluten?: boolean }[];
+  assert.deepEqual(found.map((p) => [p.code, p.containsGluten ?? p.mayContainGluten ?? null]), [["SAKURA_ST", null], ["CRISP_ST", null], ["KIKKO_ST", "vete in its ingredients"]]);
+  assert.equal((await call("week_add_item", { productCode: "SAKURA_ST", qty: 1, reason: "stir fry" })).error, false);
+  assert.equal((await call("week_add_item", { productCode: "CRISP_ST", qty: 1, reason: "topping" })).error, false);
+  const wheat = await call("week_add_item", { productCode: "KIKKO_ST", qty: 1, reason: "Gluten checked: looks fine" });
+  assert.match(wheat.text, /allows no exception/);
+  assert.deepEqual(store.items(NEXT).map((i) => i.productCode), ["SAKURA_ST", "CRISP_ST"]);
+  // Each page is fetched once and then read from the store.
+  assert.deepEqual(fetched, codes);
+});
+
 test("search shows flagged products last, marked", async () => {
   const store = new Store(":memory:");
   const willys = {
@@ -147,7 +181,7 @@ test("with no Eldorado spices, an Eldorado spice is refused and Eldorado tomatoe
   store.recordProduct({ code: "E_SPICE", name: "Grillkrydda Påse", manufacturer: "Eldorado", priceValue: 19.9 }, "regular");
   store.recordProduct({ code: "E_TOM", name: "Krossade Tomater", manufacturer: "Eldorado", priceValue: 9.9 }, "regular");
   const categories: Record<string, string> = { E_SPICE: "Skafferi > Kryddor & smaksättare > Kryddor", E_TOM: "Skafferi > Konserver" };
-  const willys = { productDetails: async (code: string) => ({ brand: "Eldorado", category: categories[code] }) };
+  const willys = { productInfo: async (code: string) => ({ brand: "Eldorado", category: categories[code], ingredients: null, labels: [] }) };
   const h = { ...household, config: { ...household.config, rules: { avoidBrands: [], avoid: [{ brand: "Eldorado", category: "spices" }], glutenFree: false, staples: [] } } } as unknown as Household;
   const server = buildServer({ store, household: h, willys } as unknown as Context, "Carin");
   const client = new Client({ name: "test", version: "1" });

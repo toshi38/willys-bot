@@ -3,7 +3,7 @@ import { z } from "zod";
 import { runClaude } from "../core/claude.ts";
 import type { Context } from "../core/context.ts";
 import { picksDishes, suggestionCount } from "../core/household.ts";
-import { needsCategory, productFacts, ruleProblems } from "../core/rules.ts";
+import { knownFacts, needsCategory, productFacts, ruleProblems } from "../core/rules.ts";
 import type { ListItem, WeekItem } from "../core/store.ts";
 import { recipeProblems } from "../recipes/check.ts";
 import { Recipe, recipeText } from "../recipes/recipe.ts";
@@ -121,7 +121,7 @@ Work like a careful, thrifty person who knows this household:
 - When the household picks some of your suggestions, make them a real choice: different proteins, cuisines and effort, each dish with its own products so any of them can be ordered without the others.
 - Items already in this week's shop are fixed: do not add them again and do not plan around removing them.
 - Only answer once the plan is complete. Never return a draft, a placeholder or an invented product code.
-- The household's brand and gluten rules are checked in code after you answer. search_products marks products of an avoided brand and products that look like they contain gluten. Avoid both. If you must buy one, start that line's reason with "Brand exception:" (every other brand costs more than double) or "Gluten checked:" (product_info shows its ingredients and labels, and they are gluten free) and say why; otherwise the plan is rejected.
+- The household's brand and gluten rules are checked in code after you answer. search_products marks products of an avoided brand, products whose ingredients contain gluten (containsGluten) and products that only look like they might (mayContainGluten, when Willys lists no ingredients). Products with gluten in their ingredients are never allowed. For the others, if you must buy one, start that line's reason with "Brand exception:" (every other brand costs more than double) or "Gluten checked:" (you know it is gluten free) and say why; otherwise the plan is rejected.
 Write the summary, reasons, notes and recipes in the household's language. Never use em dashes or en dashes; use commas, colons or full stops.
 
 # How to write a recipe
@@ -231,7 +231,7 @@ export async function makeDraft(ctx: Context, weekId: string, input: DraftInput)
       readOnly: true,
     });
     const parsed = DraftOutput.safeParse(output);
-    // Rules on categories need the products' categories, looked up once.
+    // Rules on categories and gluten need the products' pages, fetched once.
     if (parsed.success) for (const l of parsed.data.lines) await productFacts(ctx, l.productCode).catch(() => null);
     const problems = parsed.success ? checkDraft(ctx, parsed.data, input) : [`The answer did not match the schema: ${parsed.error.message.slice(0, 300)}`];
     if (!problems.length && parsed.success) return parsed.data;
@@ -262,7 +262,7 @@ export function checkDraft(ctx: Context, d: Draft, input: DraftInput, { timing =
     const name = ctx.store.productName(l.productCode);
     if (!name || ctx.store.latestPrice(l.productCode) === null) problems.push(`Product ${l.productCode} is unknown: use a code from search_products or the offers.`);
     else {
-      const facts = { code: l.productCode, name, brand: ctx.store.productBrand(l.productCode), category: ctx.store.productCategory(l.productCode) ?? undefined };
+      const facts = knownFacts(ctx, l.productCode, name)!;
       if (needsCategory(ctx.household, facts)) problems.push(`Could not look up the category of ${name} (${l.productCode}) to check the household's rules: pick another product.`);
       else problems.push(...ruleProblems(ctx.household, facts, l.reason));
     }

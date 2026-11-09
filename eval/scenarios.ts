@@ -33,8 +33,8 @@ export const CATALOG: Product[] = [
   { code: "KVARG_ST", name: "Vanilj Mild Kvarg 0,2% 1kg", price: 39.9 },
   { code: "KVARG_GARANT_ST", name: "Päron Kvarg 0,2% 900g Garant", price: 29.9 },
   { code: "COFFEE_ST", name: "Bryggkaffe Mellanrost 450g", price: 54.9 },
-  { code: "SOY_ST", name: "Japansk Soja 150ml", price: 24.9 },
-  { code: "TAMARI_ST", name: "Tamari Glutenfri Soja 150ml", price: 34.9 },
+  { code: "SOY_ST", name: "Japansk Soja 150ml", price: 24.9, ingredients: "Vatten, SOJABÖNOR 26%, salt, socker, VETE 12% (GLUTEN), smakförstärkare: E621." },
+  { code: "TAMARI_ST", name: "Tamari Glutenfri Soja 150ml", price: 34.9, ingredients: "Vatten, SOJABÖNOR 32%, salt, alkohol.", labels: ["Sånär Fri Från Gluten"] },
   { code: "CUMIN_ELDORADO_ST", name: "Spiskummin Malen Påse 50g", price: 12.9, brand: "Eldorado", category: ["Skafferi", "Kryddor & smaksättare", "Kryddor"] },
   { code: "CUMIN_SANTAMARIA_ST", name: "Spiskummin Malen Burk 33g", price: 26.9, brand: "Santa Maria", category: ["Skafferi", "Kryddor & smaksättare", "Kryddor"] },
   { code: "CHILICRISP_ST", name: "Crispy Chili In Oil 210g", price: 44.9, brand: "Laoganma", ingredients: "SOJAolja [45%], chili [25%], lök [15%], fermenterade sojabönor [SOJABÖNOR, vatten], smakförstärkare: [E621], salt, socker, Sichuan pepparpulver." },
@@ -348,9 +348,8 @@ export const SCENARIOS: Scenario[] = [
     from: "Stephen",
     text: "Add a bottle of soy sauce for the stir fry please.",
     check: (s) => {
-      const plain = code(s.after, "SOY_ST").filter((i) => !/gluten checked/i.test(i.reason));
       return [
-        ...(plain.length ? ["added the ordinary soy sauce without a gluten check"] : []),
+        ...(code(s.after, "SOY_ST").length ? ["added the soy sauce with wheat in its ingredients"] : []),
         ...(qty(s.after, "TAMARI_ST") || code(s.after, "SOY_ST").length ? [] : ["no soy sauce added"]),
         ...onlyChanged(s, ["SOY_ST", "TAMARI_ST"]),
         ...dishesKept(s),
@@ -362,8 +361,7 @@ export const SCENARIOS: Scenario[] = [
     about: "Willys lists ingredients; the bot must read them rather than send Carin to the jar (8 Nov)",
     week: "open",
     from: "Carin",
-    thread: [{ from: "Stephen", text: "Add a jar of Laoganma chili crisp please." }],
-    text: "Willys listar ingredienser under Innehållsförteckning så kolla där. Innehåller chilioljan vete?",
+    text: "Willys listar ingredienser under Innehållsförteckning så kolla där. Innehåller Laoganma chilioljan vete?",
     check: (s) => [
       ...(/sojab|soja|soy/i.test(s.reply) ? [] : ["reply does not say what the ingredients are"]),
       ...(/(kolla|läs|check|read)[^.]*(burk|etikett|jar|label)/i.test(s.reply) ? ["sent Carin to the jar instead of answering"] : []),

@@ -53,6 +53,8 @@ export interface ProductInfo {
   name: string;
   brand: string | null;
   size: string | null;
+  // Willys's category path, "Skafferi > Kryddor & smaksättare > Kryddor".
+  category: string;
   // As printed on the pack, allergens in capitals; null when Willys has none.
   ingredients: string | null;
   labels: string[];

@@ -235,6 +235,11 @@ export class Store {
         -- Willys's category path, "Skafferi > Kryddor & smaksättare > Kryddor",
         -- fetched when a rule needs it.
         category TEXT,
+        -- From the product page: the ingredient list (null when Willys has
+        -- none) and labels as JSON, and the day they were fetched.
+        ingredients TEXT,
+        labels TEXT,
+        page_fetched TEXT,
         last_seen TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS prices (
@@ -360,6 +365,7 @@ export class Store {
     // Columns added after a table was first created.
     const has = (table: string, column: string) => this.#db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
     if (!has("products", "category")) this.#db.exec(`ALTER TABLE products ADD COLUMN category TEXT`);
+    for (const c of ["ingredients", "labels", "page_fetched"]) if (!has("products", c)) this.#db.exec(`ALTER TABLE products ADD COLUMN ${c} TEXT`);
     if (!has("dishes", "origin")) this.#db.exec(`ALTER TABLE dishes ADD COLUMN origin TEXT`);
     if (!has("dishes", "picked_by")) this.#db.exec(`ALTER TABLE dishes ADD COLUMN picked_by TEXT`);
     if (!has("recipes", "structured")) this.#db.exec(`ALTER TABLE recipes ADD COLUMN structured TEXT`);
@@ -570,8 +576,23 @@ export class Store {
     return r ? ((r.category as string | null) ?? null) : null;
   }
 
-  setProductDetails(code: string, details: { brand: string | null; category: string }): void {
+  // What the product page said; ingredients and labels are left as they
+  // were when not given.
+  setProductDetails(code: string, details: { brand: string | null; category: string; ingredients?: string | null; labels?: string[] }): void {
     this.#db.prepare(`UPDATE products SET manufacturer = coalesce(?, manufacturer), category = ? WHERE code = ?`).run(details.brand, details.category, code);
+    if (details.ingredients !== undefined || details.labels) {
+      this.#db
+        .prepare(`UPDATE products SET ingredients = ?, labels = ?, page_fetched = ? WHERE code = ?`)
+        .run(details.ingredients ?? null, JSON.stringify(details.labels ?? []), today(), code);
+    }
+  }
+
+  // The ingredients and labels from the product page, or null when it has
+  // not been fetched.
+  productContents(code: string): { ingredients: string | null; labels: string[] } | null {
+    const r = this.#db.prepare(`SELECT ingredients, labels, page_fetched FROM products WHERE code = ?`).get(code);
+    if (!r?.page_fetched) return null;
+    return { ingredients: (r.ingredients as string | null) ?? null, labels: JSON.parse(String(r.labels ?? "[]")) as string[] };
   }
 
   productBrand(code: string): string | null {

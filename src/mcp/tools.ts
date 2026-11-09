@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Context } from "../core/context.ts";
 import { judgePrice, recordSearchResults } from "../core/prices.ts";
 import { picksDishes, savePreferences } from "../core/household.ts";
-import { brokenRule, glutenRisk, needsCategory, productFacts, ruleProblems, type ProductFacts } from "../core/rules.ts";
+import { brokenRule, glutenVerdict, knownFacts, needsLookup, productFacts, ruleProblems, type ProductFacts } from "../core/rules.ts";
 import { dishRecipeId, dishRecipeProblems } from "../plan/planner.ts";
 import { editable, localDate } from "../plan/week.ts";
 import { Recipe } from "../recipes/recipe.ts";
@@ -373,26 +373,32 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
       const res = await willys.search(query, 0, limit);
       recordSearchResults(store, res.results);
       // Products the household's rules flag come last, marked, so the model
-      // sees the alternatives first. Categories are looked up only for the
-      // few products a category rule could apply to.
+      // sees the alternatives first. Product pages (category, ingredients)
+      // are fetched only for the first few products a rule could depend on.
       const facts = new Map<string, ProductFacts>();
       let lookups = 0;
       for (const p of res.results) {
-        const known: ProductFacts = { code: p.code, name: p.name, brand: p.manufacturer ?? store.productBrand(p.code), category: store.productCategory(p.code) ?? undefined };
-        facts.set(p.code, needsCategory(household, known) && lookups++ < 5 ? ((await productFacts(ctx, p.code).catch(() => null)) ?? known) : known);
+        const known: ProductFacts = { ...knownFacts(ctx, p.code, p.name)!, brand: p.manufacturer ?? store.productBrand(p.code) };
+        facts.set(p.code, needsLookup(household, known) && lookups++ < 5 ? ((await productFacts(ctx, p.code).catch(() => null)) ?? known) : known);
       }
       const avoid = (code: string) => {
         const rule = brokenRule(household, facts.get(code)!);
         return rule ? [rule.brand, rule.name, rule.category && `in ${rule.category}`, rule.product].filter(Boolean).join(" ") : null;
       };
-      const flagged = (p: (typeof res.results)[number]) => !!avoid(p.code) || !!glutenRisk(household, p.name);
+      const gluten = (code: string) => {
+        const g = glutenVerdict(household, facts.get(code)!);
+        if (!g) return null;
+        if (g.kind === "looks like") return { mayContainGluten: true };
+        return { containsGluten: `${g.trace ? "may contain traces: " : ""}${g.word} in its ingredients` };
+      };
+      const flagged = (p: (typeof res.results)[number]) => !!avoid(p.code) || !!gluten(p.code);
       return text(
         [...res.results].sort((a, b) => Number(flagged(a)) - Number(flagged(b))).map((p) => ({
           code: p.code,
           name: p.name,
           brand: p.manufacturer,
           ...(avoid(p.code) ? { avoid: avoid(p.code) } : {}),
-          ...(glutenRisk(household, p.name) ? { mayContainGluten: true } : {}),
+          ...gluten(p.code),
           size: p.displayVolume,
           price: p.priceValue,
           comparePrice: p.comparePrice ? `${p.comparePrice}/${p.comparePriceUnit ?? ""}` : null,
@@ -413,7 +419,11 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
         "What a Willys product is made of, from its product page: the ingredient list (Innehållsförteckning, allergens in capitals), labels such as \"Sånär Fri Från Gluten\" or \"Det överkorsade axet\", diet and origin. Use it to check a product against an allergy or celiac disease before buying it or answering about it. ingredients is null when Willys lists none.",
       inputSchema: { productCode: z.string().min(1) },
     },
-    async ({ productCode }) => text(await willys.productInfo(productCode)),
+    async ({ productCode }) => {
+      const info = await willys.productInfo(productCode);
+      if (store.productName(productCode)) store.setProductDetails(productCode, info);
+      return text(info);
+    },
   );
 
   server.registerTool(

@@ -28,6 +28,10 @@ export interface ProductFacts {
   brand?: string | null;
   // Willys's category path; undefined when not looked up.
   category?: string | null;
+  // The product page's ingredient list: undefined when not looked up, null
+  // when Willys lists none.
+  ingredients?: string | null;
+  labels?: string[];
 }
 
 // English words members may use for Willys's Swedish categories.
@@ -96,16 +100,60 @@ export function needsCategory(household: Household, p: ProductFacts): boolean {
 }
 
 // Words in a Swedish or English product name that usually mean gluten.
-// Labelled gluten-free products pass. It is a safety net that makes the
-// model look twice, not a full check: any product can still contain gluten.
+// Labelled gluten-free products pass. It is a safety net for products whose
+// ingredients are not known, not a full check.
 const GLUTEN = ["vete", "råg", "korn", "dinkel", "durum", "pasta", "spaghetti", "makaron", "lasagne", "bröd", "tortilla", "couscous", "bulgur", "panko", "ströbröd", "soja", "teriyaki", "öl ", "wheat", "rye", "barley", "spelt", "bread", "noodle", "nudlar", "flour"];
 const NOT_GLUTEN = ["glutenfri", "gluten free", "gluten-free", "utan gluten", "majskorn", "risnudlar", "rice noodle", "majsmjöl", "rismjöl", "potatismjöl", "majstortilla"];
 
-export function glutenRisk(household: Household, name: string): string | null {
+// Labels on the product page that mean it is gluten free.
+const GLUTEN_FREE_LABEL = /fri från gluten|glutenfri|gluten free|överkorsade axet/i;
+
+// Grains and words in an ingredient list that mean gluten, including a
+// declared trace ("Kan innehålla spår av VETE"). Oats count: only oats
+// labelled gluten free are safe, and those pass on their label.
+// Each matches inside a Swedish compound ("VETEmjöl", "KORNmaltsirap");
+// WHOLE_WORDS only on their own, since they hide in other words
+// ("emmentaler", "goats").
+const GLUTEN_SOURCES = ["vete", "råg", "korn", "havre", "dinkel", "spelt", "durum", "kamut", "enkorn", "malt", "gluten", "bulgur", "couscous", "mannagryn", "semolina", "seitan", "ströbröd", "panko", "wheat", "barley"];
+const WHOLE_WORDS = ["emmer", "rye", "oat", "oats"];
+// Words that contain one of those but are gluten free.
+const GLUTEN_FREE_WORDS = /glutenfri\w* havre\w*|gluten[- ]free oats?|bovete|majskorn|pepparkorn|senapskorn|korianderkorn|fänkålskorn|kumminkorn|maltodextrin|maltitol|maltos|glutenfri\w*|gluten free|gluten-free|buckwheat/g;
+
+// The gluten source named in an ingredient list, if any, and whether it is
+// only a declared trace.
+export function glutenInIngredients(ingredients: string): { word: string; trace: boolean } | null {
+  const text = ingredients.toLowerCase().replace(GLUTEN_FREE_WORDS, " ");
+  for (const clause of text.split(/[.;]/)) {
+    const words = clause.split(/[^a-zåäöéü]+/).filter(Boolean);
+    const hit = GLUTEN_SOURCES.find((g) => words.some((w) => w.includes(g))) ?? WHOLE_WORDS.find((g) => words.includes(g));
+    if (hit) return { word: hit, trace: /spår|traces/.test(clause) };
+  }
+  return null;
+}
+
+export type GlutenVerdict =
+  | { kind: "contains"; word: string; trace: boolean }
+  | { kind: "looks like"; word: string };
+
+// Whether a product breaks a gluten-free household's rule. A gluten-free
+// label passes; otherwise the ingredient list decides when Willys has one,
+// and the product's name when it does not.
+export function glutenVerdict(household: Household, p: Pick<ProductFacts, "name" | "ingredients" | "labels">): GlutenVerdict | null {
   if (!household.config.rules?.glutenFree) return null;
-  const n = ` ${name.toLowerCase()} `;
+  if (p.labels?.some((l) => GLUTEN_FREE_LABEL.test(l))) return null;
+  if (p.ingredients) {
+    const hit = glutenInIngredients(p.ingredients);
+    return hit ? { kind: "contains", ...hit } : null;
+  }
+  const n = ` ${p.name.toLowerCase()} `;
   if (NOT_GLUTEN.some((w) => n.includes(w))) return null;
-  return GLUTEN.find((w) => n.includes(w))?.trim() ?? null;
+  const word = GLUTEN.find((w) => n.includes(w))?.trim();
+  return word ? { kind: "looks like", word } : null;
+}
+
+// Whether looking up the product page could change a rule's verdict.
+export function needsLookup(household: Household, p: ProductFacts): boolean {
+  return needsCategory(household, p) || (!!household.config.rules?.glutenFree && p.ingredients === undefined);
 }
 
 // What is wrong with buying a product, given what is known about it,
@@ -120,23 +168,47 @@ export function ruleProblems(household: Household, p: ProductFacts, reason = "")
       `${p.name} (${p.code}) breaks the household rule "avoid ${describe(rule)}": pick another product, or if every alternative costs more than double, start the reason with "Brand exception:" and say why.`,
     );
   }
-  const gluten = glutenRisk(household, p.name);
-  if (gluten && !GLUTEN_CHECKED.test(reason)) {
+  const gluten = glutenVerdict(household, p);
+  if (gluten?.kind === "contains") {
     problems.push(
-      `${p.name} (${p.code}) looks like it contains gluten ("${gluten}"): pick a product labelled glutenfri, or if you know this one is gluten free, start the reason with "Gluten checked:" and say how you know (product_info shows its ingredients and labels).`,
+      `${p.name} (${p.code}) ${gluten.trace ? "may contain traces of" : "contains"} gluten: its ingredients on willys.se list "${gluten.word}". This rule allows no exception: pick a product labelled glutenfri or one whose ingredients have no gluten.`,
+    );
+  } else if (gluten && !GLUTEN_CHECKED.test(reason)) {
+    problems.push(
+      `${p.name} (${p.code}) looks like it contains gluten ("${gluten.word}") and Willys lists no ingredients for it: pick a product labelled glutenfri, or if you know this one is gluten free, start the reason with "Gluten checked:" and say how you know.`,
     );
   }
   return problems;
 }
 
-// What the store knows about a product, looking up its category on
-// willys.se first when a rule depends on it (and saving it for next time).
-export async function productFacts(ctx: Context, code: string): Promise<ProductFacts | null> {
-  const name = ctx.store.productName(code);
+// What the store knows about a product, from its search results and any
+// product page fetched before.
+export function knownFacts(ctx: Context, code: string, name = ctx.store.productName(code)): ProductFacts | null {
   if (!name) return null;
-  const facts: ProductFacts = { code, name, brand: ctx.store.productBrand(code), category: ctx.store.productCategory(code) ?? undefined };
-  if (!needsCategory(ctx.household, facts)) return facts;
-  const details = await ctx.willys.productDetails(code);
-  ctx.store.setProductDetails(code, details);
-  return { ...facts, brand: details.brand ?? facts.brand, category: details.category };
+  const contents = ctx.store.productContents(code);
+  return {
+    code,
+    name,
+    brand: ctx.store.productBrand(code),
+    category: ctx.store.productCategory(code) ?? undefined,
+    ...(contents ? { ingredients: contents.ingredients, labels: contents.labels } : {}),
+  };
+}
+
+// What the store knows about a product, fetching its page on willys.se
+// first when a rule depends on it (and saving it for next time).
+export async function productFacts(ctx: Context, code: string): Promise<ProductFacts | null> {
+  const facts = knownFacts(ctx, code);
+  if (!facts || !needsLookup(ctx.household, facts)) return facts;
+  // Without the page, gluten falls back to the name check; a category rule
+  // cannot be decided at all.
+  let page;
+  try {
+    page = await ctx.willys.productInfo(code);
+  } catch (err) {
+    if (needsCategory(ctx.household, facts)) throw err;
+    return facts;
+  }
+  ctx.store.setProductDetails(code, page);
+  return { ...facts, brand: page.brand ?? facts.brand, category: page.category, ingredients: page.ingredients, labels: page.labels };
 }

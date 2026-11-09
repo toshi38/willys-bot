@@ -110,15 +110,9 @@ export class WillysClient {
     return this.json(`/search/clean?${q}`);
   }
 
-  // A product's brand and category path, from its product page.
-  async productDetails(code: string): Promise<{ brand: string | null; category: string }> {
-    const p = await this.json<{ manufacturer?: string | null; breadCrumbs?: { name: string; categoryCode?: string | null }[] }>(`/axfood/rest/p/${encodeURIComponent(code)}`);
-    const path = (p.breadCrumbs ?? []).filter((b) => b.categoryCode && b.categoryCode !== "N00").map((b) => b.name);
-    return { brand: p.manufacturer ?? null, category: path.join(" > ") };
-  }
-
-  // What a product's page says it is made of: the ingredient list (allergens
-  // in capitals, as on the pack), labels such as "Sånär Fri Från Gluten", and origin.
+  // A product's page: its brand and category path, and what it is made of:
+  // the ingredient list (allergens in capitals, as on the pack), labels such
+  // as "Sånär Fri Från Gluten", and origin.
   async productInfo(code: string): Promise<ProductInfo> {
     const p = await this.json<{
       name?: string;
@@ -130,6 +124,7 @@ export class WillysClient {
       description?: string | null;
       originCountry?: string | null;
       tradeItemCountryOfOrigin?: string | null;
+      breadCrumbs?: { name: string; categoryCode?: string | null }[];
     }>(`/axfood/rest/p/${encodeURIComponent(code)}`);
     const blank = (s: string | null | undefined) => (s && s.trim() ? s.trim() : null);
     return {
@@ -137,6 +132,7 @@ export class WillysClient {
       name: p.name ?? code,
       brand: p.manufacturer ?? null,
       size: p.displayVolume ?? null,
+      category: (p.breadCrumbs ?? []).filter((b) => b.categoryCode && b.categoryCode !== "N00").map((b) => b.name).join(" > "),
       ingredients: blank(p.ingredients),
       labels: (p.extendedLabels ?? []).map((l) => l.name ?? "").filter(Boolean),
       diet: blank(p.dietTypeInformation),
