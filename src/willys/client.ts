@@ -1,5 +1,5 @@
 import { encryptCredential } from "./crypto.ts";
-import type { CampaignKind, Cart, Customer, PickupSlot, PickupSlots, ProductPage, Promotion, Store } from "./types.ts";
+import type { CampaignKind, Cart, Customer, PickupSlot, PickupSlots, ProductInfo, ProductPage, Promotion, Store } from "./types.ts";
 
 // Client for the JSON API behind willys.se. It keeps a cookie jar so a
 // logged-in session can be saved and reused instead of logging in on every
@@ -115,6 +115,34 @@ export class WillysClient {
     const p = await this.json<{ manufacturer?: string | null; breadCrumbs?: { name: string; categoryCode?: string | null }[] }>(`/axfood/rest/p/${encodeURIComponent(code)}`);
     const path = (p.breadCrumbs ?? []).filter((b) => b.categoryCode && b.categoryCode !== "N00").map((b) => b.name);
     return { brand: p.manufacturer ?? null, category: path.join(" > ") };
+  }
+
+  // What a product's page says it is made of: the ingredient list (allergens
+  // in capitals, as on the pack), labels such as "Sånär Fri Från Gluten", and origin.
+  async productInfo(code: string): Promise<ProductInfo> {
+    const p = await this.json<{
+      name?: string;
+      manufacturer?: string | null;
+      displayVolume?: string;
+      ingredients?: string | null;
+      extendedLabels?: { name?: string }[] | null;
+      dietTypeInformation?: string | null;
+      description?: string | null;
+      originCountry?: string | null;
+      tradeItemCountryOfOrigin?: string | null;
+    }>(`/axfood/rest/p/${encodeURIComponent(code)}`);
+    const blank = (s: string | null | undefined) => (s && s.trim() ? s.trim() : null);
+    return {
+      code,
+      name: p.name ?? code,
+      brand: p.manufacturer ?? null,
+      size: p.displayVolume ?? null,
+      ingredients: blank(p.ingredients),
+      labels: (p.extendedLabels ?? []).map((l) => l.name ?? "").filter(Boolean),
+      diet: blank(p.dietTypeInformation),
+      description: blank(p.description),
+      origin: blank(p.tradeItemCountryOfOrigin) ?? blank(p.originCountry),
+    };
   }
 
   // Current promotions for a store: "online" are the ones that apply to

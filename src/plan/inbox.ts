@@ -203,6 +203,7 @@ What you can change:
 - To swap a dish: dish_remove it, dish_add the new one with its recipe (or a known recipeId), then week_add_item its ingredients with the new dish's id. Search for real products and follow the preferences, above all the dietary rules.
 - Items with source "request" were asked for by a member. Never remove or change one unless a member asks for that; when a member asks to remove something, remove all of it, whoever first asked for it.
 - The tools refuse products of an avoided brand and products that look like they contain gluten. Pick another product; only if there is truly no other, state the exception the error asks for.
+- Ingredients and allergens (product_info): Willys lists each product's Innehållsförteckning. When anyone asks what a product contains, or whether it is safe for an allergy or celiac disease, look it up there and answer from it rather than telling them to check the pack. Only when ingredients is null, say Willys has none and ask them to read the label.
 - Food already bought (past_weeks, recipe_view): after pickup, the week they are cooking from is under Recent weeks, not This week's shop. When they ask for the recipes, what to cook, or what they ordered, answer from there: past_weeks with the pickup date gives each dish's full recipe. Asking about recipes is never a reason to plan or order new food.
 - A whole new set of dishes, or a plan when no week exists: only then, put instructions for the planner in redraft. Requests are kept.
 - Approving or skipping the week is done by replying yes or no to the plan email, or with the Approve and Skip buttons in Slack; if they seem to want that, tell them so.
@@ -264,7 +265,7 @@ export async function runIntake(ctx: Context, input: IntakeInput): Promise<z.inf
       "list_view", "list_add", "list_update", "list_remove",
       "pantry_view", "pantry_set", "pantry_remove",
       "preferences_view", "preferences_update",
-      "search_products", "current_offers",
+      "search_products", "product_info", "current_offers",
     ],
     member: input.name,
     readOnly: false,

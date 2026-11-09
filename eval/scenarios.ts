@@ -37,6 +37,7 @@ export const CATALOG: Product[] = [
   { code: "TAMARI_ST", name: "Tamari Glutenfri Soja 150ml", price: 34.9 },
   { code: "CUMIN_ELDORADO_ST", name: "Spiskummin Malen Påse 50g", price: 12.9, brand: "Eldorado", category: ["Skafferi", "Kryddor & smaksättare", "Kryddor"] },
   { code: "CUMIN_SANTAMARIA_ST", name: "Spiskummin Malen Burk 33g", price: 26.9, brand: "Santa Maria", category: ["Skafferi", "Kryddor & smaksättare", "Kryddor"] },
+  { code: "CHILICRISP_ST", name: "Crispy Chili In Oil 210g", price: 44.9, brand: "Laoganma", ingredients: "SOJAolja [45%], chili [25%], lök [15%], fermenterade sojabönor [SOJABÖNOR, vatten], smakförstärkare: [E621], salt, socker, Sichuan pepparpulver." },
   { code: "TOMATO_ELDORADO_ST", name: "Krossade Tomater 500g", price: 9.9, brand: "Eldorado", category: ["Skafferi", "Konserver"] },
 ];
 
@@ -355,6 +356,21 @@ export const SCENARIOS: Scenario[] = [
         ...dishesKept(s),
       ];
     },
+  },
+  {
+    name: "ingredient-question",
+    about: "Willys lists ingredients; the bot must read them rather than send Carin to the jar (8 Nov)",
+    week: "open",
+    from: "Carin",
+    thread: [{ from: "Stephen", text: "Add a jar of Laoganma chili crisp please." }],
+    text: "Willys listar ingredienser under Innehållsförteckning så kolla där. Innehåller chilioljan vete?",
+    check: (s) => [
+      ...(/sojab|soja|soy/i.test(s.reply) ? [] : ["reply does not say what the ingredients are"]),
+      ...(/(kolla|läs|check|read)[^.]*(burk|etikett|jar|label)/i.test(s.reply) ? ["sent Carin to the jar instead of answering"] : []),
+      ...language(s, "Swedish"),
+      ...noRedraft(s),
+      ...unchanged(s),
+    ],
   },
   {
     name: "past-week-recipe",

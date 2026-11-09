@@ -47,6 +47,20 @@ export interface Product {
   offlinePromotionLowestHistoricalPrice?: string | null;
 }
 
+// A product's page, as far as what it is made of.
+export interface ProductInfo {
+  code: string;
+  name: string;
+  brand: string | null;
+  size: string | null;
+  // As printed on the pack, allergens in capitals; null when Willys has none.
+  ingredients: string | null;
+  labels: string[];
+  diet: string | null;
+  description: string | null;
+  origin: string | null;
+}
+
 export interface Pagination {
   pageSize: number;
   currentPage: number;

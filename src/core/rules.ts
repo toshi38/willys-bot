@@ -123,7 +123,7 @@ export function ruleProblems(household: Household, p: ProductFacts, reason = "")
   const gluten = glutenRisk(household, p.name);
   if (gluten && !GLUTEN_CHECKED.test(reason)) {
     problems.push(
-      `${p.name} (${p.code}) looks like it contains gluten ("${gluten}"): pick a product labelled glutenfri, or if you know this one is gluten free, start the reason with "Gluten checked:" and say how you know.`,
+      `${p.name} (${p.code}) looks like it contains gluten ("${gluten}"): pick a product labelled glutenfri, or if you know this one is gluten free, start the reason with "Gluten checked:" and say how you know (product_info shows its ingredients and labels).`,
     );
   }
   return problems;

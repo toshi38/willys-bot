@@ -24,6 +24,8 @@ export interface Product {
   brand?: string;
   // Willys's category names, top first.
   category?: string[];
+  // The product page's Innehållsförteckning.
+  ingredients?: string;
 }
 
 export const CATALOG: Product[] = [
@@ -95,7 +97,7 @@ export class FakeWillys {
       const p = this.catalog.find((c) => c.code === decodeURIComponent(url.pathname.split("/").pop()!));
       if (!p) return send(res, 404, { error: "no such product" });
       const crumbs = (p.category ?? ["Skafferi"]).map((name, i) => ({ name, categoryCode: `N${i + 1}` }));
-      return send(res, 200, { code: p.code, name: p.name, manufacturer: p.brand ?? null, breadCrumbs: [{ name: "Alla varor", categoryCode: "N00" }, ...crumbs, { name: p.name, categoryCode: null }] });
+      return send(res, 200, { code: p.code, name: p.name, manufacturer: p.brand ?? null, ingredients: p.ingredients ?? "", breadCrumbs: [{ name: "Alla varor", categoryCode: "N00" }, ...crumbs, { name: p.name, categoryCode: null }] });
     }
     if (route === "GET /axfood/rest/cart") return send(res, 200, this.#cart());
     if (route === "POST /axfood/rest/cart/addProducts") {

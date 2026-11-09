@@ -208,3 +208,14 @@ test("dish_add saves a checked recipe, and sends one with problems back with wha
   const text = (await call("dish_add", { name: "Curry", portions: 6, why: "Again", recipeId: store.dishes(NEXT)[0]!.recipeId })).text;
   assert.match(text, /has no steps yet/);
 });
+
+test("product_info shows what Willys says a product is made of", async () => {
+  const info = { code: "LGM", name: "Crispy Chili In Oil", brand: "Laoganma", size: "210g", ingredients: "SOJAolja, chili, lök", labels: [], diet: null, description: null, origin: "Kina" };
+  const willys = { productInfo: async (code: string) => ({ ...info, code }) };
+  const server = buildServer({ store: new Store(":memory:"), household: ruled, willys } as unknown as Context, "Carin");
+  const client = new Client({ name: "test", version: "1" });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(a), client.connect(b)]);
+  const res = (await client.callTool({ name: "product_info", arguments: { productCode: "LGM" } })) as { content: { text: string }[] };
+  assert.deepEqual(JSON.parse(res.content[0].text), info);
+});

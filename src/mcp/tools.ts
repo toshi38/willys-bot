@@ -407,6 +407,16 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
   );
 
   server.registerTool(
+    "product_info",
+    {
+      description:
+        "What a Willys product is made of, from its product page: the ingredient list (Innehållsförteckning, allergens in capitals), labels such as \"Sånär Fri Från Gluten\" or \"Det överkorsade axet\", diet and origin. Use it to check a product against an allergy or celiac disease before buying it or answering about it. ingredients is null when Willys lists none.",
+      inputSchema: { productCode: z.string().min(1) },
+    },
+    async ({ productCode }) => text(await willys.productInfo(productCode)),
+  );
+
+  server.registerTool(
     "current_offers",
     {
       description: "This week's Willys online offers (the ones that apply to a click-and-collect order) at the household's store, from the latest daily snapshot. Filter by a word in the name or brand.",

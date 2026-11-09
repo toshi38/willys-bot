@@ -121,7 +121,7 @@ Work like a careful, thrifty person who knows this household:
 - When the household picks some of your suggestions, make them a real choice: different proteins, cuisines and effort, each dish with its own products so any of them can be ordered without the others.
 - Items already in this week's shop are fixed: do not add them again and do not plan around removing them.
 - Only answer once the plan is complete. Never return a draft, a placeholder or an invented product code.
-- The household's brand and gluten rules are checked in code after you answer. search_products marks products of an avoided brand and products that look like they contain gluten. Avoid both. If you must buy one, start that line's reason with "Brand exception:" (every other brand costs more than double) or "Gluten checked:" (you know it is gluten free) and say why; otherwise the plan is rejected.
+- The household's brand and gluten rules are checked in code after you answer. search_products marks products of an avoided brand and products that look like they contain gluten. Avoid both. If you must buy one, start that line's reason with "Brand exception:" (every other brand costs more than double) or "Gluten checked:" (product_info shows its ingredients and labels, and they are gluten free) and say why; otherwise the plan is rejected.
 Write the summary, reasons, notes and recipes in the household's language. Never use em dashes or en dashes; use commas, colons or full stops.
 
 # How to write a recipe
@@ -226,7 +226,7 @@ export async function makeDraft(ctx: Context, weekId: string, input: DraftInput)
       systemPrompt: SYSTEM_PROMPT,
       prompt,
       schema: DRAFT_SCHEMA,
-      tools: ["search_products", "current_offers", "price_history", "list_view", "pantry_view", "recipe_view"],
+      tools: ["search_products", "product_info", "current_offers", "price_history", "list_view", "pantry_view", "recipe_view"],
       member: "planner",
       readOnly: true,
     });
