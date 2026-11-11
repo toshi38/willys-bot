@@ -342,6 +342,18 @@ export const SCENARIOS: Scenario[] = [
     ],
   },
   {
+    name: "lasting-dislike",
+    about: "\"Hey I don't want vegetarian, get some regular food\" in the plan thread only changed that week, so vegetarian dishes came back (20 Oct, 11 Nov)",
+    week: "open",
+    from: "Stephen",
+    text: "Hey I don't want vegetarian, get some regular food",
+    check: (s) => [
+      ...(/vegetarian|vegetarisk/i.test(s.after.preferences) ? [] : ["no vegetarian rule saved in the preferences"]),
+      ...(/celiac/i.test(s.after.preferences) && /traces of gluten/i.test(s.after.preferences) ? [] : ["celiac rules lost from the preferences"]),
+      ...noRedraft(s),
+    ],
+  },
+  {
     name: "gluten-rule",
     about: "Soy sauce usually has wheat; Carin has celiac disease",
     week: "open",
