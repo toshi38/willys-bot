@@ -121,6 +121,7 @@ Work like a careful, thrifty person who knows this household:
 - When the household picks some of your suggestions, make them a real choice: different proteins, cuisines and effort, each dish with its own products so any of them can be ordered without the others.
 - Items already in this week's shop are fixed: do not add them again and do not plan around removing them.
 - Only answer once the plan is complete. Never return a draft, a placeholder or an invented product code.
+- Shopping-list items are bought as the member wrote them: they are that member's own, and the gluten rule does not apply to them. Everything else you pick (dish ingredients, basics, restocks) follows every rule.
 - The household's brand and gluten rules are checked in code after you answer. search_products marks products of an avoided brand, products whose ingredients contain gluten (containsGluten) and products that only look like they might (mayContainGluten, when Willys lists no ingredients). Products with gluten in their ingredients are never allowed. For the others, if you must buy one, start that line's reason with "Brand exception:" (every other brand costs more than double) or "Gluten checked:" (you know it is gluten free) and say why; otherwise the plan is rejected.
 Write the summary, reasons, notes and recipes in the household's language. Never use em dashes or en dashes; use commas, colons or full stops.
 
@@ -238,9 +239,23 @@ export async function makeDraft(ctx: Context, weekId: string, input: DraftInput)
     // The last try is taken with recipes whose steps could be ordered
     // better: a week with a rice pot started a few minutes early beats no
     // week at all.
-    if (attempt >= 3 && parsed.success && !checkDraft(ctx, parsed.data, input, { timing: false }).length) return parsed.data;
+    // Products that still break a rule are left out and named in the notes,
+    // for the household to replace: a week missing two products beats no
+    // week at all.
+    if (attempt >= 3 && parsed.success) {
+      const kept = withoutBrokenLines(ctx, parsed.data);
+      if (!checkDraft(ctx, kept, input, { timing: false }).length) return kept;
+    }
     if (attempt >= 3) throw new Error(`The planner's draft failed its checks three times: ${problems.join("; ")}`);
-    prompt = `${buildPrompt(ctx, weekId, input)}\n\n## Your previous answer was rejected\n${problems.map((p) => `- ${p}`).join("\n")}\nPlan the whole week again and fix these.`;
+    prompt = [
+      buildPrompt(ctx, weekId, input),
+      "",
+      "## Your previous answer was rejected",
+      ...problems.map((p) => `- ${p}`),
+      ...(parsed.success
+        ? ["", "Return the same plan with only these fixed: swap each flagged product for another, fix the named recipe steps, and keep every other dish, line and recipe exactly as it was. Your previous answer:", "```json", JSON.stringify(parsed.data), "```"]
+        : ["Plan the whole week again and fix these."]),
+    ].join("\n");
   }
 }
 
@@ -259,13 +274,7 @@ export function checkDraft(ctx: Context, d: Draft, input: DraftInput, { timing =
     problems.push(...dishRecipeProblems(ctx, dish, { timing }).map((p) => `Dish ${i + 1} (${dish.name}): ${p}`));
   });
   for (const l of d.lines) {
-    const name = ctx.store.productName(l.productCode);
-    if (!name || ctx.store.latestPrice(l.productCode) === null) problems.push(`Product ${l.productCode} is unknown: use a code from search_products or the offers.`);
-    else {
-      const facts = knownFacts(ctx, l.productCode, name)!;
-      if (needsCategory(ctx.household, facts)) problems.push(`Could not look up the category of ${name} (${l.productCode}) to check the household's rules: pick another product.`);
-      else problems.push(...ruleProblems(ctx.household, facts, l.reason));
-    }
+    problems.push(...lineProblems(ctx, l));
     if (l.dish < 0 || l.dish > d.dishes.length) problems.push(`Line ${l.productCode} points at dish ${l.dish}, which does not exist.`);
   }
   const budget = ctx.household.config.plan.budgetSek;
@@ -288,6 +297,39 @@ export function checkDraft(ctx: Context, d: Draft, input: DraftInput, { timing =
   const covered = new Set([...d.lines.flatMap((l) => l.listItemIds), ...d.skipped.map((s) => s.listItemId)]);
   for (const i of openRequests(ctx, input.fixed)) if (!covered.has(i.id)) problems.push(`List item #${i.id} (${i.text}) is neither bought nor skipped.`);
   return problems;
+}
+
+// What is wrong with buying a line's product: an unknown code, or a
+// household rule it breaks. A line for a shopping-list item is that
+// member's own request, so the gluten rule does not apply to it.
+export function lineProblems(ctx: Context, l: Draft["lines"][number]): string[] {
+  const name = ctx.store.productName(l.productCode);
+  if (!name || ctx.store.latestPrice(l.productCode) === null) return [`Product ${l.productCode} is unknown: use a code from search_products or the offers.`];
+  const facts = knownFacts(ctx, l.productCode, name)!;
+  if (needsCategory(ctx.household, facts)) return [`Could not look up the category of ${name} (${l.productCode}) to check the household's rules: pick another product.`];
+  return ruleProblems(ctx.household, facts, l.reason, { gluten: !l.listItemIds.length });
+}
+
+// The draft without the lines whose products break a rule, each named in
+// the notes so the household can find a replacement. A list item such a
+// line was for counts as skipped.
+export function withoutBrokenLines(ctx: Context, d: Draft): Draft {
+  const broken = d.lines.filter((l) => lineProblems(ctx, l).length);
+  if (!broken.length) return d;
+  const name = (l: Draft["lines"][number]) => ctx.store.productName(l.productCode) ?? l.productCode;
+  const why = (l: Draft["lines"][number]) => lineProblems(ctx, l)[0]!.split(":")[0]!.replace(`${name(l)} (${l.productCode}) `, "");
+  const dishName = (l: Draft["lines"][number]) => (l.dish > 0 ? d.dishes[l.dish - 1]?.name : undefined);
+  return {
+    ...d,
+    lines: d.lines.filter((l) => !broken.includes(l)),
+    skipped: [...d.skipped, ...broken.flatMap((l) => l.listItemIds.map((listItemId) => ({ listItemId, reason: `the product found ${why(l)}` })))],
+    notes: [
+      d.notes,
+      ...broken.map((l) => `- Not bought: ${name(l)}${dishName(l) ? ` for ${dishName(l)}` : ""}, it ${why(l)}. Add a replacement before ordering.`),
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  };
 }
 
 // What is wrong with a dish's recipe: a new one must pass the recipe

@@ -159,8 +159,10 @@ export function needsLookup(household: Household, p: ProductFacts): boolean {
 }
 
 // What is wrong with buying a product, given what is known about it,
-// unless the reason states an allowed exception.
-export function ruleProblems(household: Household, p: ProductFacts, reason = ""): string[] {
+// unless the reason states an allowed exception. The gluten rule is for
+// what the household eats together; a member's own request is bought as
+// asked (gluten: false), since they know who it is for.
+export function ruleProblems(household: Household, p: ProductFacts, reason = "", { gluten: checkGluten = true }: { gluten?: boolean } = {}): string[] {
   const problems: string[] = [];
   const rule = brokenRule(household, p);
   if (rule?.strict) {
@@ -170,7 +172,7 @@ export function ruleProblems(household: Household, p: ProductFacts, reason = "")
       `${p.name} (${p.code}) breaks the household rule "avoid ${describe(rule)}": pick another product, or if every alternative costs more than double, start the reason with "Brand exception:" and say why.`,
     );
   }
-  const gluten = glutenVerdict(household, p);
+  const gluten = checkGluten ? glutenVerdict(household, p) : null;
   if (gluten?.kind === "contains") {
     problems.push(
       `${p.name} (${p.code}) ${gluten.trace ? "may contain traces of" : "contains"} gluten: its ingredients on willys.se list "${gluten.word}". This rule allows no exception: pick a product labelled glutenfri or one whose ingredients have no gluten.`,

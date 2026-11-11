@@ -4,7 +4,7 @@ import type { Context } from "../core/context.ts";
 import type { Household } from "../core/household.ts";
 import { Store } from "../core/store.ts";
 import type { Product } from "../willys/types.ts";
-import { buildPrompt, checkDraft, dishRecipeProblems, openRequests, SYSTEM_PROMPT, type Draft, type DraftInput } from "./planner.ts";
+import { buildPrompt, checkDraft, dishRecipeProblems, lineProblems, openRequests, SYSTEM_PROMPT, withoutBrokenLines, type Draft, type DraftInput } from "./planner.ts";
 import { sampleRecipe } from "../recipes/sample.ts";
 
 const WEEK = "2026-10-30";
@@ -247,4 +247,23 @@ test("the planner is told how to write a recipe, from the recipe-writing skill",
   assert.match(SYSTEM_PROMPT, /# How to write a recipe\n\nA recipe is cooked from a phone/);
   assert.match(SYSTEM_PROMPT, /The recipe is the whole meal/);
   assert.doesNotMatch(SYSTEM_PROMPT, /^name: recipe-writing/m);
+});
+
+test("the gluten rule is for what the household eats together, not a member's own list item", () => {
+  const { store, ctx: plain, input, eggs } = redraftSetup();
+  const ctx = { ...plain, household: { ...plain.household, config: { ...plain.household.config, rules: { avoidBrands: [], avoid: [], glutenFree: true, staples: [] } } } } as unknown as Context;
+  store.recordProduct(product("FLOUR_ST", "Vetemjöl 2kg", 19.9), "regular");
+  const forDish = { productCode: "FLOUR_ST", qty: 1, reason: "Dumplings", dish: 1, listItemIds: [], restocks: "" };
+  const forList = { ...forDish, dish: 0, reason: "Stephen's baking", listItemIds: [eggs.id] };
+  assert.match(lineProblems(ctx, forDish).join(" "), /looks like it contains gluten/);
+  assert.deepEqual(lineProblems(ctx, forList), []);
+
+  // On the last try a draft is taken without the lines that break a rule,
+  // each named in the notes.
+  const d = draft({ lines: [...draft({}).lines, forDish], skipped: [{ listItemId: eggs.id, reason: "None" }] });
+  assert.equal(checkDraft(ctx, d, input).length, 1);
+  const kept = withoutBrokenLines(ctx, d);
+  assert.deepEqual(kept.lines.map((l) => l.productCode), ["BEANS_ST"]);
+  assert.match(kept.notes, /^- Not bought: Vetemjöl 2kg for Bean stew, it looks like it contains gluten \("vete"\) and Willys lists no ingredients for it\. Add a replacement before ordering\.$/);
+  assert.deepEqual(checkDraft(ctx, kept, input), []);
 });

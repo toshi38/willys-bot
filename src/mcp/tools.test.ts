@@ -108,22 +108,24 @@ test("only one dish can be removed per message; more means a redraft", async () 
   assert.deepEqual(store.dishes(NEXT).map((d) => d.name), ["Chili"]);
 });
 
-test("an avoided brand or a gluten risk is refused unless the exception is stated", async () => {
+test("an avoided brand or a gluten risk is refused unless the exception is stated, and gluten only for a dish", async () => {
   const store = new Store(":memory:");
-  weekWithDish(store, NEXT);
+  const dish = weekWithDish(store, NEXT);
   store.recordProduct({ code: "GARANT_ST", name: "Päron Kvarg 900g", manufacturer: "Garant", priceValue: 29.9 }, "regular");
   store.recordProduct({ code: "SOY_ST", name: "Japansk Soja 150ml", priceValue: 24.9 }, "regular");
   const call = await connect(store, undefined, ruled);
   assert.match((await call("week_add_item", { productCode: "GARANT_ST", qty: 1, reason: "kvarg" })).text, /breaks the household rule "avoid Garant"/);
-  assert.match((await call("week_add_item", { productCode: "SOY_ST", qty: 1, reason: "stir fry" })).text, /contains gluten/);
+  assert.match((await call("week_add_item", { productCode: "SOY_ST", qty: 1, reason: "stir fry", dishId: dish.id })).text, /contains gluten/);
   assert.equal(store.items(NEXT).length, 0);
   assert.equal((await call("week_add_item", { productCode: "GARANT_ST", qty: 1, reason: "Brand exception: Arla is sold out" })).error, false);
-  assert.equal(store.items(NEXT).length, 1);
+  // A member's own request is bought as asked: they know who it is for.
+  assert.equal((await call("week_add_item", { productCode: "SOY_ST", qty: 1, reason: "for my noodles" })).error, false);
+  assert.equal(store.items(NEXT).length, 2);
 });
 
 test("gluten is judged from the product's Willys ingredients when it has them", async () => {
   const store = new Store(":memory:");
-  weekWithDish(store, NEXT);
+  const dish = weekWithDish(store, NEXT);
   const pages: Record<string, { ingredients: string | null; labels: string[] }> = {
     SAKURA_ST: { ingredients: "Vatten, SOJABÖNOR, majsmjöl, salt.", labels: [] },
     KIKKO_ST: { ingredients: "Vatten, SOJABÖNOR, VETE, salt.", labels: [] },
@@ -146,9 +148,9 @@ test("gluten is judged from the product's Willys ingredients when it has them", 
   };
   const found = JSON.parse((await call("search_products", { query: "soja" })).text) as { code: string; containsGluten?: string; mayContainGluten?: boolean }[];
   assert.deepEqual(found.map((p) => [p.code, p.containsGluten ?? p.mayContainGluten ?? null]), [["SAKURA_ST", null], ["CRISP_ST", null], ["KIKKO_ST", "vete in its ingredients"]]);
-  assert.equal((await call("week_add_item", { productCode: "SAKURA_ST", qty: 1, reason: "stir fry" })).error, false);
-  assert.equal((await call("week_add_item", { productCode: "CRISP_ST", qty: 1, reason: "topping" })).error, false);
-  const wheat = await call("week_add_item", { productCode: "KIKKO_ST", qty: 1, reason: "Gluten checked: looks fine" });
+  assert.equal((await call("week_add_item", { productCode: "SAKURA_ST", qty: 1, reason: "stir fry", dishId: dish.id })).error, false);
+  assert.equal((await call("week_add_item", { productCode: "CRISP_ST", qty: 1, reason: "topping", dishId: dish.id })).error, false);
+  const wheat = await call("week_add_item", { productCode: "KIKKO_ST", qty: 1, reason: "Gluten checked: looks fine", dishId: dish.id });
   assert.match(wheat.text, /allows no exception/);
   assert.deepEqual(store.items(NEXT).map((i) => i.productCode), ["SAKURA_ST", "CRISP_ST"]);
   // Each page is fetched once and then read from the store.

@@ -77,6 +77,8 @@ describe("the weekly cycle", () => {
     const res = await env.wb(["plan"]);
     assert.equal(res.code, 0, res.stderr);
     assert.match(env.claudeLog()[1].prompt, /Dish 1 \(Chicken curry\): Step rice is ready \d+ minutes before step serve needs it/);
+    // The retry gets its previous answer back, to fix rather than start over.
+    assert.match(env.claudeLog()[1].prompt, /keep every other dish, line and recipe exactly as it was\. Your previous answer:\n```json\n\{"summary":/);
     assert.equal(env.claudeLog().length, 3);
     assert.equal(row<{ status: string }>(env, `SELECT status FROM weeks WHERE id = ?`, WEEK)?.status, "open");
   });

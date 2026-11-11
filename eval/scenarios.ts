@@ -357,6 +357,18 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    name: "own-gluten-request",
+    about: "The gluten rule is for Carin's food; Stephen may buy wheat for himself (11 Nov)",
+    week: "open",
+    from: "Stephen",
+    text: "Add a bottle of the Japansk Soja for my own lunches please, I know it has wheat, it's just for me.",
+    check: (s) => [
+      ...(code(s.after, "SOY_ST").length ? [] : ["did not add the soy sauce Stephen asked for himself"]),
+      ...onlyChanged(s, ["SOY_ST"]),
+      ...dishesKept(s),
+    ],
+  },
+  {
     name: "ingredient-question",
     about: "Willys lists ingredients; the bot must read them rather than send Carin to the jar (8 Nov)",
     week: "open",

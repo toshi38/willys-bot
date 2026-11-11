@@ -180,7 +180,9 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
       const dish = dishId !== undefined ? store.dish(dishId) : null;
       if (dishId !== undefined && (dish?.weekId !== w.id || dish.removedAt)) throw new Error(`Dish ${dishId} is not in this week`);
       if (restocks && !store.pantryItems().some((p) => p.name === restocks)) throw new Error(`No pantry entry named "${restocks}": use the exact name from pantry_view`);
-      const problems = ruleProblems(household, (await productFacts(ctx, productCode))!, reason);
+      // A request (no dish) is the member's own: only dish ingredients must
+      // be gluten free.
+      const problems = ruleProblems(household, (await productFacts(ctx, productCode))!, reason, { gluten: dishId !== undefined });
       if (problems.length) throw new Error(problems.join(" "));
       const item = store.addItem(
         w.id,
