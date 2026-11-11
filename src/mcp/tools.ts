@@ -376,12 +376,16 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
       recordSearchResults(store, res.results);
       // Products the household's rules flag come last, marked, so the model
       // sees the alternatives first. Product pages (category, ingredients)
-      // are fetched only for the first few products a rule could depend on.
+      // are fetched for the first few products a rule could depend on, and
+      // always for one whose name alone would flag it for gluten, so that
+      // verdict comes from its ingredients whenever Willys lists them.
       const facts = new Map<string, ProductFacts>();
       let lookups = 0;
       for (const p of res.results) {
         const known: ProductFacts = { ...knownFacts(ctx, p.code, p.name)!, brand: p.manufacturer ?? store.productBrand(p.code) };
-        facts.set(p.code, needsLookup(household, known) && lookups++ < 5 ? ((await productFacts(ctx, p.code).catch(() => null)) ?? known) : known);
+        const byNameOnly = known.ingredients === undefined && glutenVerdict(household, known)?.kind === "looks like";
+        const look = needsLookup(household, known) && (byNameOnly || lookups++ < 5);
+        facts.set(p.code, look ? ((await productFacts(ctx, p.code).catch(() => null)) ?? known) : known);
       }
       const avoid = (code: string) => {
         const rule = brokenRule(household, facts.get(code)!);
@@ -390,7 +394,9 @@ Prices are in SEK. Verdicts compare today's price with what this household has s
       const gluten = (code: string) => {
         const g = glutenVerdict(household, facts.get(code)!);
         if (!g) return null;
-        if (g.kind === "looks like") return { mayContainGluten: true };
+        if (g.kind === "looks like") {
+          return { mayContainGluten: facts.get(code)!.ingredients === null ? "by its name: Willys lists no ingredients" : "by its name: its Willys page could not be read, use product_info" };
+        }
         return { containsGluten: `${g.trace ? "may contain traces: " : ""}${g.word} in its ingredients` };
       };
       const flagged = (p: (typeof res.results)[number]) => !!avoid(p.code) || !!gluten(p.code);

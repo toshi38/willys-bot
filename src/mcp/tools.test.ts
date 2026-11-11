@@ -255,3 +255,23 @@ test("product_info shows what Willys says a product is made of", async () => {
   const res = (await client.callTool({ name: "product_info", arguments: { productCode: "LGM" } })) as { content: { text: string }[] };
   assert.deepEqual(JSON.parse(res.content[0].text), info);
 });
+
+test("a product whose name looks like gluten has its ingredients read, however far down the results it is", async () => {
+  const store = new Store(":memory:");
+  // Six plain products first, then a chili crisp named like soy sauce.
+  const codes = ["A_ST", "B_ST", "C_ST", "D_ST", "E_ST", "F_ST", "CRISP_ST"];
+  for (const code of codes) store.recordProduct({ code, name: code === "CRISP_ST" ? "Crispy Chili In Oil Soja" : `Chili ${code}`, priceValue: 25 }, "regular");
+  const pages: Record<string, string | null> = { CRISP_ST: "SOJAolja, chili, lök, fermenterade sojabönor [SOJABÖNOR, vatten], salt." };
+  const willys = {
+    productInfo: async (code: string) => ({ code, name: code, brand: null, size: null, category: "Skafferi", diet: null, description: null, origin: null, ingredients: pages[code] ?? null, labels: [] }),
+    search: async () => ({ results: codes.map((code) => ({ code, name: store.productName(code), priceValue: 25 })), pagination: { numberOfPages: 1 } }),
+  };
+  const server = buildServer({ store, household: ruled, willys } as unknown as Context, "Carin");
+  const client = new Client({ name: "test", version: "1" });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(a), client.connect(b)]);
+  const res = (await client.callTool({ name: "search_products", arguments: { query: "chili" } })) as { content: { text: string }[] };
+  const crisp = (JSON.parse(res.content[0].text) as { code: string; mayContainGluten?: string; containsGluten?: string }[]).find((p) => p.code === "CRISP_ST")!;
+  assert.equal(crisp.mayContainGluten, undefined, "its ingredients were read, and have no gluten");
+  assert.equal(crisp.containsGluten, undefined);
+});

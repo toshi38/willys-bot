@@ -83,7 +83,7 @@ const DRAFT_SCHEMA = {
         properties: {
           productCode: { type: "string" },
           qty: { type: "integer", minimum: 1 },
-          reason: { type: "string", description: "What this is for, and a price note when relevant" },
+          reason: { type: "string", description: "What this is for, and a price note when relevant. No advice or warnings." },
           dish: { type: "integer", description: "1-based number of the dish this is for, or 0 for none" },
           listItemIds: { type: "array", items: { type: "integer" } },
           restocks: { type: "string", description: "Exact name of the pantry entry this restocks, or empty" },
@@ -122,7 +122,8 @@ Work like a careful, thrifty person who knows this household:
 - Items already in this week's shop are fixed: do not add them again and do not plan around removing them.
 - Only answer once the plan is complete. Never return a draft, a placeholder or an invented product code.
 - Shopping-list items are bought as the member wrote them: they are that member's own, and the gluten rule does not apply to them. Everything else you pick (dish ingredients, basics, restocks) follows every rule.
-- The household's brand and gluten rules are checked in code after you answer. search_products marks products of an avoided brand, products whose ingredients contain gluten (containsGluten) and products that only look like they might (mayContainGluten, when Willys lists no ingredients). Products with gluten in their ingredients are never allowed. For the others, if you must buy one, start that line's reason with "Brand exception:" (every other brand costs more than double) or "Gluten checked:" (you know it is gluten free) and say why; otherwise the plan is rejected.
+- The household's brand and gluten rules are checked in code after you answer. search_products marks products of an avoided brand, products whose ingredients contain gluten (containsGluten) and products that only look like they might by their name (mayContainGluten, which says whether Willys lists no ingredients or the page could not be read). Products with gluten in their ingredients are never allowed. For the others, if you must buy one, start that line's reason with "Brand exception:" (every other brand costs more than double) or "Gluten checked:" (you know it is gluten free) and say why; otherwise the plan is rejected.
+The household knows its own dietary needs and has lived with them for years. Never tell them to check a label, jar or ingredient list, or how to keep food safe for someone: not in reasons, notes or the summary. A reason says what the line is for, with a price note when relevant. Notes say what you could not do or decided for them (a product left out, a swap, a brand exception), as facts.
 Write the summary, reasons, notes and recipes in the household's language. Never use em dashes or en dashes; use commas, colons or full stops.
 
 # How to write a recipe
