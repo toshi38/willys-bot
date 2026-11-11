@@ -71,10 +71,15 @@ test("gluten sources and declared traces are found in Willys ingredient lists", 
   assert.deepEqual(found("HAVREflingor*, cornflakes (majsmjöl, maltextrakt (KORN))."), { word: "korn", trace: false });
   assert.deepEqual(found("Mandel, socker. Kan innehålla spår av VETE och JORDNÖTTER."), { word: "vete", trace: true });
   assert.equal(found("HAVREgryn 100%.")?.word, "havre");
+  // Barley is still barley when its grains are whole.
+  assert.equal(found("Matkorn. 100% hela korn.")?.word, "korn");
   for (const clean of [
     "SOJAolja [45%], chili [25%], lök [15%], fermenterade sojabönor [SOJABÖNOR, vatten], smakförstärkare: [E621], salt, socker, Sichuan pepparpulver.",
     "Bovetemjöl, majskorn, svartpepparkorn, maltodextrin, salt.",
     "Glutenfri havre 100%.",
+    "INGREDIENSER: Basmatiris. 90% hela korn.",
+    "Ingredienser: Jasminris. 100% brutna korn.",
+    "Långkornigt ris. Riskornen är förkokta.",
     "Mjölk, EMMENTALER ost, salt. Kan innehålla spår av HASSELNÖTTER och MANDEL.",
   ]) assert.equal(found(clean), null, clean);
 });

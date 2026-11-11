@@ -116,8 +116,10 @@ const GLUTEN_FREE_LABEL = /fri från gluten|glutenfri|gluten free|överkorsade a
 // ("emmentaler", "goats").
 const GLUTEN_SOURCES = ["vete", "råg", "korn", "havre", "dinkel", "spelt", "durum", "kamut", "enkorn", "malt", "gluten", "bulgur", "couscous", "mannagryn", "semolina", "seitan", "ströbröd", "panko", "wheat", "barley"];
 const WHOLE_WORDS = ["emmer", "rye", "oat", "oats"];
-// Words that contain one of those but are gluten free.
-const GLUTEN_FREE_WORDS = /glutenfri\w* havre\w*|gluten[- ]free oats?|bovete|majskorn|pepparkorn|senapskorn|korianderkorn|fänkålskorn|kumminkorn|maltodextrin|maltitol|maltos|glutenfri\w*|gluten free|gluten-free|buckwheat/g;
+// Words that contain one of those but are gluten free, including "korn" in
+// its sense of grains ("Basmatiris. 90% hela korn", "brutna korn",
+// "långkornigt ris").
+const GLUTEN_FREE_WORDS = /glutenfri\w* havre\w*|gluten[- ]free oats?|bovete|majskorn|(?:hela|brutna) korn\b|riskorn\w*|(?:lång|rund|mellan)korni\w*|pepparkorn|senapskorn|korianderkorn|fänkålskorn|kumminkorn|maltodextrin|maltitol|maltos|glutenfri\w*|gluten free|gluten-free|buckwheat/g;
 
 // The gluten source named in an ingredient list, if any, and whether it is
 // only a declared trace.
