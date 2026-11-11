@@ -52,6 +52,10 @@ export async function planWeek(ctx: Context, opts: { dryRun?: boolean; instructi
     await sendWeek(ctx, existing);
     return { done: true, message: `Week ${weekId} was drafted but not sent: sent it now` };
   }
+  if (existing?.status === "open" && household.config.slack && !slackPost(ctx, weekId) && !opts.dryRun) {
+    await postPlan(ctx, existing);
+    return { done: true, message: `Week ${weekId} was emailed but not in Slack: posted it now` };
+  }
   if (existing) return { done: false, message: `Week ${weekId} is already ${existing.status}: not drafting it again` };
   await snapshotCampaigns(willys, store, household.config.willys.storeId);
   const input = { fixed: [], keptDishes: [], instructions: opts.instructions ?? null, replacing: [] };
@@ -198,15 +202,27 @@ async function sendWeek(ctx: Context, week: Week): Promise<void> {
   const messageId = await sendToMembers(household, { subject: subject(week), markdown: `${body}\n\n${EMAIL_FOOTER(ctx, week)}` });
   store.set(idsKey(week.id), JSON.stringify([messageId]));
   store.updateWeek(week.id, { sentAt: new Date().toISOString(), announcedVersion: week.version });
-  await toSlack(async () => {
-    const ref = await postToWeek(ctx, slackPlanText(ctx, week), { buttons: planButtons(ctx, week), broadcast: true });
-    const thread = await weekThread(ctx);
-    if (ref && thread) {
-      store.set(slackKey(week.id), JSON.stringify(ref));
-      store.set(slackThreadKey(ref.ts), week.id);
-      store.set(slackThreadKey(thread.ts), week.id);
-    }
-  });
+  await postPlan(ctx, week);
+}
+
+// Posts the plan in the week's Slack thread, shown in the channel too. The
+// plan is the one post the household must see, so a failure is not just
+// logged: it fails the run, which raises the alert, and the next plan run
+// posts it again.
+async function postPlan(ctx: Context, week: Week): Promise<void> {
+  const { store } = ctx;
+  let ref;
+  try {
+    ref = await postToWeek(ctx, slackPlanText(ctx, week), { buttons: planButtons(ctx, week), broadcast: true });
+  } catch (err) {
+    throw new Error(`Week ${week.id} was emailed but its plan was not posted to Slack: ${err instanceof Error ? err.message : err}`);
+  }
+  const thread = await weekThread(ctx);
+  if (ref && thread) {
+    store.set(slackKey(week.id), JSON.stringify(ref));
+    store.set(slackThreadKey(ref.ts), week.id);
+    store.set(slackThreadKey(thread.ts), week.id);
+  }
 }
 
 const EMAIL_FOOTER = (ctx: Context, week: Week) =>

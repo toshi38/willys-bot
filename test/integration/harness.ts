@@ -176,9 +176,29 @@ export class FakeResend {
   }
 }
 
-// slack-gateway's outbox socket: records posts and updates.
+// What slack-gateway's outbox refuses (its src/protocol.ts): Slack's own
+// limits on a message's text and buttons. The stand-in refuses the same, so
+// a post that would fail on hermes fails here.
+export function gatewayProblems(body: { text?: unknown; buttons?: { action?: string; label?: string; value?: string }[] }): string[] {
+  const problems: string[] = [];
+  if (typeof body.text !== "string" || !body.text) problems.push("text: empty");
+  const buttons = body.buttons ?? [];
+  if (buttons.length > 25) problems.push(`buttons: ${buttons.length}, at most 25`);
+  for (const b of buttons) {
+    if (!b.action || b.action.length > 200) problems.push(`button action: ${JSON.stringify(b.action)}`);
+    if (!b.label || b.label.length > 75) problems.push(`button label: ${JSON.stringify(b.label)}`);
+    if ((b.value ?? "").length > 2000) problems.push("button value: over 2000 characters");
+  }
+  return problems;
+}
+
+// slack-gateway's outbox socket: records posts and updates, and refuses
+// what the real one refuses (gatewayProblems).
 export class FakeGateway {
-  readonly posts: { path: string; text: string; threadTs?: string; broadcast?: boolean; buttons: { action: string; value: string }[]; ts?: string }[] = [];
+  readonly posts: { path: string; text: string; threadTs?: string; broadcast?: boolean; buttons: { action: string; label?: string; value: string }[]; ts?: string }[] = [];
+  readonly refused: string[] = [];
+  // When true, every post and update fails as if the gateway were broken.
+  failing = false;
   #server!: Server;
   socket = "";
 
@@ -186,6 +206,12 @@ export class FakeGateway {
     this.socket = join(dir, "gateway.sock");
     this.#server = createServer(async (req, res) => {
       const body = (await readBody(req)) as FakeGateway["posts"][number];
+      if (this.failing) return send(res, 500, { error: "gateway down" });
+      const problems = req.url === "/post" || req.url === "/update" ? gatewayProblems(body) : [];
+      if (problems.length) {
+        this.refused.push(...problems);
+        return send(res, 400, problems);
+      }
       const ts = `${1_800_000_000 + this.posts.length}.000100`;
       this.posts.push({ ...body, path: req.url ?? "", ts: req.url === "/update" ? body.ts : ts });
       send(res, 200, { channel: "C0FOOD", ts });

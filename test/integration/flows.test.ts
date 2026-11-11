@@ -255,6 +255,51 @@ describe("standing orders", () => {
   });
 });
 
+describe("a household that cooks three of six suggestions, as the Laus do", () => {
+  let env: Env;
+  beforeEach(async () => {
+    env = await setup({ meals: 3, plan: { suggestions: 6 } });
+  });
+  afterEach(() => env.stop());
+
+  // Six dishes, each with its own product, from the two in goodDraft.
+  const sixDishes = () => {
+    const d = goodDraft();
+    const names = ["Chicken curry", "Chili con carne", "Lentil soup", "Fish pie", "Tofu stir fry", "Bean stew"];
+    return {
+      ...d,
+      dishes: names.map((name, i) => ({ ...d.dishes[i % 2]!, name })),
+      lines: [...names.map((_, i) => ({ productCode: i % 2 ? "BEEF_ST" : "CHICKEN_ST", qty: 1, reason: "Dish", dish: i + 1, listItemIds: [], restocks: "" })), d.lines.at(-1)!],
+    };
+  };
+
+  test("the plan reaches Slack with a Pick button for each of the six dishes", async () => {
+    env.claude([{ calls: SEARCHES, output: sixDishes() }]);
+    const res = await env.wb(["plan"]);
+    assert.equal(res.code, 0, res.stderr);
+    assert.deepEqual(env.gateway.refused, []);
+    const plan = env.gateway.posts.find((p) => p.buttons.length)!;
+    assert.equal(plan.buttons.filter((b) => b.action === "plan.pick").length, 6);
+    assert.equal(plan.broadcast, true);
+  });
+
+  test("a plan Slack refuses fails the run, so the alert goes out, and the next run posts it", async () => {
+    env.claude([{ calls: SEARCHES, output: sixDishes() }]);
+    env.gateway.failing = true;
+    const failed = await env.wb(["plan"]);
+    assert.notEqual(failed.code, 0);
+    assert.match(failed.stderr, /was emailed but its plan was not posted to Slack/);
+    assert.equal(env.resend.sent.length, 1, "the email still went");
+
+    env.gateway.failing = false;
+    const again = await env.wb(["plan"]);
+    assert.equal(again.code, 0, again.stderr);
+    assert.match(again.stdout, /was emailed but not in Slack: posted it now/);
+    assert.equal(env.gateway.posts.filter((p) => p.buttons.some((b) => b.action === "plan.pick")).length, 1);
+    assert.equal(env.resend.sent.length, 1, "and is not emailed twice");
+  });
+});
+
 describe("picking from more suggestions than the household cooks, and rating what they cooked", () => {
   let env: Env;
   beforeEach(async () => {
