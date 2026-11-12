@@ -7,7 +7,7 @@
 #   WILLYS_PASSWORD
 set -euo pipefail
 
-host="${HERMES_HOST:-hermes}"
+host="${SERVER_HOST:-hermes}"
 project="${INFISICAL_PROJECT_ID:-b83a832f-b552-48c8-bfa2-f4cb0f0878d9}" # Food Bot, in Lau Engineering AB
 env="${INFISICAL_ENV:-prod}"
 

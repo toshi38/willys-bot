@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 household="${1:?usage: deploy/push-household.sh <household> [--force]}"
-host="${HERMES_HOST:-hermes}"
+host="${SERVER_HOST:-hermes}"
 
 if [[ "${2:-}" != "--force" ]] && ssh "$host" "test -e ~/.local/state/willys-bot/$household/willys-bot.sqlite"; then
   echo "hermes already has data for $household; pass --force to overwrite it with the Mac's copy" >&2
