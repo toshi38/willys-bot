@@ -1,0 +1,751 @@
+{
+  "pickup": "2026-11-13",
+  "dishes": [
+    {
+      "name": "Maafe: Malian peanut chicken stew with sweet potato and cabbage",
+      "portions": 6,
+      "recipe": {
+        "name": "Maafe: Malian peanut chicken stew with sweet potato and cabbage",
+        "servings": 6,
+        "summary": "Mali's peanut and tomato chicken stew with sweet potato, served with rice",
+        "equipment": [
+          "large pot",
+          "saucepan with lid"
+        ],
+        "ingredients": [
+          {
+            "id": "chicken",
+            "name": "chicken thigh fillets, skinless",
+            "qty": 1400,
+            "unit": "g",
+            "prep": "in 3 cm pieces"
+          },
+          {
+            "id": "onion",
+            "name": "yellow onions",
+            "qty": 3,
+            "prep": "chopped"
+          },
+          {
+            "id": "garlic",
+            "name": "garlic cloves",
+            "qty": 5,
+            "prep": "grated"
+          },
+          {
+            "id": "ginger",
+            "name": "fresh ginger",
+            "qty": 30,
+            "unit": "g",
+            "prep": "grated"
+          },
+          {
+            "id": "tomato-paste",
+            "name": "tomato paste",
+            "qty": 3,
+            "unit": "tbsp"
+          },
+          {
+            "id": "crushed-tomatoes",
+            "name": "crushed tomatoes",
+            "qty": 400,
+            "unit": "g",
+            "fromPantry": true
+          },
+          {
+            "id": "peanut-butter",
+            "name": "peanut butter, creamy",
+            "qty": 150,
+            "unit": "g"
+          },
+          {
+            "id": "sweet-potato",
+            "name": "sweet potatoes",
+            "qty": 1000,
+            "unit": "g",
+            "prep": "peeled, in 3 cm cubes"
+          },
+          {
+            "id": "cabbage",
+            "name": "pointed cabbage",
+            "qty": 500,
+            "unit": "g",
+            "prep": "in wide strips"
+          },
+          {
+            "id": "water",
+            "name": "water",
+            "qty": 6,
+            "unit": "dl"
+          },
+          {
+            "id": "rice",
+            "name": "rice",
+            "qty": 6,
+            "unit": "dl",
+            "fromPantry": true
+          },
+          {
+            "id": "oil",
+            "name": "oil",
+            "qty": 2,
+            "unit": "tbsp",
+            "fromPantry": true
+          },
+          {
+            "id": "salt",
+            "name": "salt"
+          }
+        ],
+        "steps": [
+          {
+            "id": "cut-chicken",
+            "kind": "prep",
+            "text": "Cut the chicken into 3 cm pieces and salt it.",
+            "uses": [
+              {
+                "ingredient": "chicken",
+                "becomes": "chicken pieces"
+              },
+              {
+                "ingredient": "salt"
+              }
+            ],
+            "minutes": 5
+          },
+          {
+            "id": "brown",
+            "kind": "cook",
+            "text": "Heat the oil in the large pot on high and brown the chicken in two batches, turning when the pieces release from the pot. Lift out onto a plate.",
+            "uses": [
+              {
+                "ingredient": "oil"
+              },
+              {
+                "ingredient": "chicken",
+                "becomes": "browned chicken"
+              }
+            ],
+            "minutes": 3,
+            "timer": {
+              "minutes": 8,
+              "upTo": 10,
+              "label": "Chicken"
+            },
+            "passive": true,
+            "after": [
+              "cut-chicken"
+            ],
+            "heat": "high"
+          },
+          {
+            "id": "chop",
+            "kind": "prep",
+            "text": "Chop the onions, grate the garlic and ginger, cube the sweet potatoes and strip the cabbage.",
+            "uses": [
+              {
+                "ingredient": "onion",
+                "becomes": "chopped onion"
+              },
+              {
+                "ingredient": "garlic",
+                "becomes": "grated garlic"
+              },
+              {
+                "ingredient": "ginger",
+                "becomes": "grated ginger"
+              },
+              {
+                "ingredient": "sweet-potato",
+                "becomes": "sweet potato cubes"
+              },
+              {
+                "ingredient": "cabbage",
+                "becomes": "cabbage strips"
+              }
+            ],
+            "minutes": 12
+          },
+          {
+            "id": "soften",
+            "kind": "cook",
+            "text": "Lower to medium. Fry the onion, garlic, ginger and tomato paste in the same pot, stirring, until soft and fragrant.",
+            "uses": [
+              {
+                "ingredient": "onion"
+              },
+              {
+                "ingredient": "garlic"
+              },
+              {
+                "ingredient": "ginger"
+              },
+              {
+                "ingredient": "tomato-paste"
+              }
+            ],
+            "minutes": 5,
+            "timer": {
+              "minutes": 5,
+              "label": "Onion"
+            },
+            "after": [
+              "chop",
+              "brown"
+            ],
+            "heat": "medium"
+          },
+          {
+            "id": "stew",
+            "kind": "simmer",
+            "text": "Stir the peanut butter, crushed tomatoes and water into the pot until smooth. Add the sweet potato and the browned chicken, bring to the boil, then simmer under a lid until the sweet potato is soft.",
+            "uses": [
+              {
+                "ingredient": "peanut-butter"
+              },
+              {
+                "ingredient": "crushed-tomatoes"
+              },
+              {
+                "ingredient": "water"
+              },
+              {
+                "ingredient": "sweet-potato"
+              },
+              {
+                "ingredient": "chicken",
+                "becomes": "stew"
+              }
+            ],
+            "minutes": 3,
+            "timer": {
+              "minutes": 20,
+              "upTo": 25,
+              "label": "Maafe"
+            },
+            "passive": true,
+            "after": [
+              "soften"
+            ],
+            "heat": "low"
+          },
+          {
+            "id": "rice-cook",
+            "kind": "simmer",
+            "text": "Rinse the rice, put it in the saucepan with 9 dl water and a pinch of salt, bring to the boil, then cover and simmer on low.",
+            "uses": [
+              {
+                "ingredient": "rice"
+              }
+            ],
+            "minutes": 3,
+            "timer": {
+              "minutes": 12,
+              "upTo": 15,
+              "label": "Rice"
+            },
+            "passive": true,
+            "after": [
+              "stew"
+            ],
+            "heat": "low"
+          },
+          {
+            "id": "cabbage-in",
+            "kind": "cook",
+            "text": "Stir the cabbage into the maafe for the last 5 minutes, until just tender. Add salt to taste.",
+            "uses": [
+              {
+                "ingredient": "cabbage"
+              },
+              {
+                "ingredient": "salt"
+              }
+            ],
+            "minutes": 6,
+            "after": [
+              "stew"
+            ]
+          },
+          {
+            "id": "serve",
+            "kind": "serve",
+            "text": "Serve the maafe over the rice.",
+            "uses": [],
+            "minutes": 2,
+            "after": [
+              "cabbage-in",
+              "rice-cook"
+            ]
+          }
+        ],
+        "notes": "Freezes well without the rice."
+      },
+      "fromText": false
+    },
+    {
+      "name": "Soy-lime braised chicken with mushrooms, adobo style",
+      "portions": 6,
+      "recipe": {
+        "name": "Soy-lime braised chicken with mushrooms, adobo style",
+        "servings": 6,
+        "summary": "Garlicky soy and lemon braised chicken with mushrooms and rice",
+        "equipment": [
+          "large pot",
+          "saucepan with lid"
+        ],
+        "ingredients": [
+          {
+            "id": "chicken",
+            "name": "chicken thigh fillets, skinless",
+            "qty": 1400,
+            "unit": "g",
+            "prep": "in 4 cm pieces"
+          },
+          {
+            "id": "onion",
+            "name": "yellow onions",
+            "qty": 2,
+            "prep": "sliced"
+          },
+          {
+            "id": "garlic",
+            "name": "garlic cloves",
+            "qty": 6,
+            "prep": "grated"
+          },
+          {
+            "id": "ginger",
+            "name": "fresh ginger",
+            "qty": 30,
+            "unit": "g",
+            "prep": "grated"
+          },
+          {
+            "id": "mushrooms",
+            "name": "mushrooms",
+            "qty": 500,
+            "unit": "g",
+            "prep": "halved"
+          },
+          {
+            "id": "cabbage",
+            "name": "pointed cabbage",
+            "qty": 500,
+            "unit": "g",
+            "prep": "in strips"
+          },
+          {
+            "id": "soy",
+            "name": "Mrs Chang soy sauce",
+            "qty": 5,
+            "unit": "tbsp",
+            "fromPantry": true
+          },
+          {
+            "id": "lemon",
+            "name": "lemons",
+            "qty": 2
+          },
+          {
+            "id": "water",
+            "name": "water",
+            "qty": 3,
+            "unit": "dl"
+          },
+          {
+            "id": "rice",
+            "name": "rice",
+            "qty": 6,
+            "unit": "dl",
+            "fromPantry": true
+          },
+          {
+            "id": "oil",
+            "name": "oil",
+            "qty": 2,
+            "unit": "tbsp",
+            "fromPantry": true
+          }
+        ],
+        "steps": [
+          {
+            "id": "cut",
+            "kind": "prep",
+            "text": "Cut the chicken into pieces.",
+            "uses": [
+              {
+                "ingredient": "chicken",
+                "becomes": "chicken pieces"
+              }
+            ],
+            "minutes": 5
+          },
+          {
+            "id": "brown",
+            "kind": "cook",
+            "text": "Brown the chicken in the oil on high in two batches. Lift out.",
+            "uses": [
+              {
+                "ingredient": "oil"
+              },
+              {
+                "ingredient": "chicken",
+                "becomes": "browned chicken"
+              }
+            ],
+            "minutes": 3,
+            "timer": {
+              "minutes": 8,
+              "label": "Chicken"
+            },
+            "passive": true,
+            "after": [
+              "cut"
+            ],
+            "heat": "high"
+          },
+          {
+            "id": "chop",
+            "kind": "prep",
+            "text": "Slice the onions, grate the garlic and ginger, halve the mushrooms and strip the cabbage.",
+            "uses": [
+              {
+                "ingredient": "onion",
+                "becomes": "sliced onion"
+              },
+              {
+                "ingredient": "garlic",
+                "becomes": "grated garlic"
+              },
+              {
+                "ingredient": "ginger",
+                "becomes": "grated ginger"
+              },
+              {
+                "ingredient": "mushrooms",
+                "becomes": "halved mushrooms"
+              },
+              {
+                "ingredient": "cabbage",
+                "becomes": "cabbage strips"
+              }
+            ],
+            "minutes": 12
+          },
+          {
+            "id": "fry",
+            "kind": "cook",
+            "text": "On medium, fry the onion, garlic, ginger and mushrooms until the mushrooms brown.",
+            "uses": [
+              {
+                "ingredient": "onion"
+              },
+              {
+                "ingredient": "garlic"
+              },
+              {
+                "ingredient": "ginger"
+              },
+              {
+                "ingredient": "mushrooms"
+              }
+            ],
+            "minutes": 7,
+            "after": [
+              "chop",
+              "brown"
+            ],
+            "heat": "medium"
+          },
+          {
+            "id": "braise",
+            "kind": "simmer",
+            "text": "Add the browned chicken, soy, juice of both lemons and the water. Simmer until the chicken is cooked through and the sauce slightly reduced.",
+            "uses": [
+              {
+                "ingredient": "soy"
+              },
+              {
+                "ingredient": "lemon"
+              },
+              {
+                "ingredient": "water"
+              },
+              {
+                "ingredient": "chicken",
+                "becomes": "braised chicken"
+              }
+            ],
+            "minutes": 2,
+            "timer": {
+              "minutes": 20,
+              "label": "Braise"
+            },
+            "passive": true,
+            "after": [
+              "fry"
+            ],
+            "heat": "low"
+          },
+          {
+            "id": "rice-cook",
+            "kind": "simmer",
+            "text": "Rinse the rice, cook it in the saucepan with 9 dl water under a lid on low.",
+            "uses": [
+              {
+                "ingredient": "rice"
+              }
+            ],
+            "minutes": 3,
+            "timer": {
+              "minutes": 12,
+              "upTo": 15,
+              "label": "Rice"
+            },
+            "passive": true,
+            "after": [
+              "braise"
+            ],
+            "heat": "low"
+          },
+          {
+            "id": "cabbage-in",
+            "kind": "cook",
+            "text": "Stir the cabbage into the chicken for the last 5 minutes, until just tender.",
+            "uses": [
+              {
+                "ingredient": "cabbage"
+              }
+            ],
+            "minutes": 6,
+            "after": [
+              "braise"
+            ]
+          },
+          {
+            "id": "serve",
+            "kind": "serve",
+            "text": "Serve the chicken and sauce over the rice.",
+            "uses": [],
+            "minutes": 2,
+            "after": [
+              "cabbage-in",
+              "rice-cook"
+            ]
+          }
+        ],
+        "notes": "Even better the next day."
+      },
+      "fromText": false
+    },
+    {
+      "name": "Lemon salmon with roasted beetroot and potatoes, garlic yoghurt",
+      "portions": 6,
+      "recipe": {
+        "name": "Lemon salmon with roasted beetroot and potatoes, garlic yoghurt",
+        "servings": 6,
+        "summary": "Oven-roasted salmon and beetroot with a lemon and garlic yoghurt",
+        "equipment": [
+          "2 baking trays"
+        ],
+        "ingredients": [
+          {
+            "id": "salmon",
+            "name": "frozen salmon fillets, Omega",
+            "qty": 1000,
+            "unit": "g",
+            "prep": "thawed"
+          },
+          {
+            "id": "beetroot",
+            "name": "beetroot",
+            "qty": 1000,
+            "unit": "g",
+            "prep": "peeled, in 2 cm wedges"
+          },
+          {
+            "id": "potatoes",
+            "name": "potatoes",
+            "qty": 900,
+            "unit": "g",
+            "prep": "in 2 cm pieces",
+            "fromPantry": true
+          },
+          {
+            "id": "garlic",
+            "name": "garlic cloves",
+            "qty": 3,
+            "prep": "grated",
+            "fromPantry": true
+          },
+          {
+            "id": "lemon",
+            "name": "lemons",
+            "qty": 2
+          },
+          {
+            "id": "yoghurt",
+            "name": "Greek yoghurt",
+            "qty": 4,
+            "unit": "dl"
+          },
+          {
+            "id": "oil",
+            "name": "oil",
+            "qty": 3,
+            "unit": "tbsp",
+            "fromPantry": true
+          },
+          {
+            "id": "salt",
+            "name": "salt",
+            "fromPantry": true
+          }
+        ],
+        "steps": [
+          {
+            "id": "preheat",
+            "kind": "preheat",
+            "text": "Heat the oven to 225°C fan.",
+            "uses": [],
+            "minutes": 1,
+            "timer": {
+              "minutes": 15,
+              "label": "Oven 225°C"
+            },
+            "passive": true,
+            "oven": {
+              "celsius": 225,
+              "fan": true
+            }
+          },
+          {
+            "id": "veg",
+            "kind": "prep",
+            "text": "Peel the beetroot and cut into wedges, cut the potatoes into pieces. Toss both on the trays with oil and salt.",
+            "uses": [
+              {
+                "ingredient": "beetroot",
+                "becomes": "beetroot wedges"
+              },
+              {
+                "ingredient": "potatoes",
+                "becomes": "potato pieces"
+              },
+              {
+                "ingredient": "oil"
+              },
+              {
+                "ingredient": "salt"
+              }
+            ],
+            "minutes": 12
+          },
+          {
+            "id": "sauce",
+            "kind": "prep",
+            "text": "While the oven finishes heating, stir the yoghurt with the grated garlic, the juice of one lemon and salt. Taste and add more garlic or lemon if you want it sharper.",
+            "uses": [
+              {
+                "ingredient": "yoghurt"
+              },
+              {
+                "ingredient": "garlic"
+              },
+              {
+                "ingredient": "lemon",
+                "qty": 1
+              }
+            ],
+            "minutes": 5
+          },
+          {
+            "id": "roast",
+            "kind": "bake",
+            "text": "Roast the vegetables until tender with golden edges.",
+            "uses": [
+              {
+                "ingredient": "beetroot"
+              },
+              {
+                "ingredient": "potatoes"
+              }
+            ],
+            "minutes": 2,
+            "timer": {
+              "minutes": 30,
+              "upTo": 35,
+              "label": "Vegetables"
+            },
+            "passive": true,
+            "after": [
+              "preheat",
+              "veg"
+            ],
+            "oven": {
+              "celsius": 225,
+              "fan": true
+            }
+          },
+          {
+            "id": "salmon-prep",
+            "kind": "prep",
+            "text": "Pat the salmon dry, salt it and slice the other lemon.",
+            "uses": [
+              {
+                "ingredient": "salmon"
+              },
+              {
+                "ingredient": "lemon",
+                "qty": 1
+              }
+            ],
+            "minutes": 4
+          },
+          {
+            "id": "salmon-bake",
+            "kind": "bake",
+            "text": "Lay the salmon with lemon slices on the trays among the vegetables and roast until it flakes easily.",
+            "uses": [
+              {
+                "ingredient": "salmon"
+              },
+              {
+                "ingredient": "lemon"
+              }
+            ],
+            "minutes": 2,
+            "timer": {
+              "minutes": 10,
+              "upTo": 12,
+              "label": "Salmon"
+            },
+            "passive": true,
+            "after": [
+              "roast",
+              "salmon-prep"
+            ],
+            "oven": {
+              "celsius": 225,
+              "fan": true
+            }
+          },
+          {
+            "id": "serve",
+            "kind": "serve",
+            "text": "Serve the salmon with the vegetables and the garlic yoghurt.",
+            "uses": [],
+            "minutes": 2,
+            "after": [
+              "salmon-bake",
+              "sauce"
+            ]
+          }
+        ],
+        "notes": "The salmon offer is 3 for 179 with max 1 purchase, so the second pack may cost the regular price. Beetroot keeps well for lunches. The garlic gets stronger in the fridge after a day."
+      },
+      "fromText": false
+    }
+  ]
+}
