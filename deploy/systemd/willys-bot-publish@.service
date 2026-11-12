@@ -1,5 +1,5 @@
 [Unit]
-Description=food-bot: put ordered weeks on the recipe site once their order is placed (%i)
+Description=food-bot: put ordered weeks on the recipe site, again when they change (%i)
 After=network-online.target
 Wants=network-online.target
 OnFailure=willys-bot-alert@%i.service
@@ -13,7 +13,5 @@ Environment=WILLYS_BOT_DATA=%h/.local/state/willys-bot
 Environment=WILLYS_BOT_HOUSEHOLDS=%h/.config/willys-bot/households
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 LoadCredentialEncrypted=willys-bot-resend-key:%h/.config/credstore.encrypted/willys-bot-resend-key
-LoadCredentialEncrypted=willys-bot-willys-username:%h/.config/credstore.encrypted/willys-bot-willys-username
-LoadCredentialEncrypted=willys-bot-willys-password:%h/.config/credstore.encrypted/willys-bot-willys-password
 ExecStart=/usr/bin/node --no-warnings=ExperimentalWarning src/cli.ts publish
 TimeoutStartSec=600

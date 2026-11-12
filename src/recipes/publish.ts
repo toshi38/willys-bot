@@ -1,67 +1,69 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Context } from "../core/context.ts";
-import { dataDir, type Store, type Week } from "../core/store.ts";
+import { dataDir, type Store } from "../core/store.ts";
 import { localDate } from "../plan/week.ts";
-import { orderState } from "../plan/weekly.ts";
 import { siteWeek } from "./export.ts";
 import { leakProblems } from "./leaks.ts";
 import { isoWeek } from "./site.ts";
 
-// Puts a week's recipes on the recipe site once its order is placed on
-// willys.se, and not before: until then the household can still change the
-// dishes. The week goes into site-data/weeks/<pickup>.json in a clone of
-// this repository kept next to the household's data, and is pushed to main,
-// which Netlify builds from.
+// Puts a week's recipes on the recipe site as soon as the week is ordered,
+// that is approved with its cart filled, so the household can read them
+// ahead of the pickup. Until checkout the household can still change the
+// dishes, so a week whose content changes goes up again. The week goes into
+// site-data/weeks/<pickup>.json in a clone of this repository kept next to
+// the household's data, and is pushed to main, which Netlify builds from.
 
-const publishedKey = (weekId: string) => `site.published.${weekId}`;
+const publishedKey = (weekId: string) => `site.publishedHash.${weekId}`;
 
-// Ordered weeks not yet on the site, from the last two weeks on: older ones
-// were cooked long ago.
-export function unpublishedWeeks(store: Store, today = localDate(new Date())): Week[] {
+export interface Pending {
+  weekId: string;
+  path: string;
+  content: string;
+  hash: string;
+}
+
+// Ordered weeks from the last two weeks on (older ones were cooked long
+// ago) whose content differs from what last went up.
+export function pendingWeeks(store: Store, today = localDate(new Date())): Pending[] {
   const from = localDate(new Date(new Date(`${today}T12:00:00`).getTime() - 14 * 86_400_000));
-  return store.weeks().filter((w) => w.status === "applied" && w.id >= from && !store.get(publishedKey(w.id)));
+  return store
+    .weeks()
+    .filter((w) => w.status === "applied" && w.id >= from)
+    .map((w) => {
+      const content = `${JSON.stringify(siteWeek(store, w.id), null, 2)}\n`;
+      return { weekId: w.id, path: `site-data/weeks/${w.id}.json`, content, hash: createHash("sha256").update(content).digest("hex") };
+    })
+    .filter((p) => store.get(publishedKey(p.weekId)) !== p.hash);
 }
 
-export interface Publisher {
-  // Whether the week's order is placed, so its dishes can no longer change.
-  placed(week: Week): Promise<boolean>;
-  // Writes the file into the site's data and pushes it; false when the
-  // site already has the week, which is then left as it is.
-  push(path: string, content: string, message: string): boolean;
-}
+// Writes the file into the site's data and pushes it; false when the site
+// already has exactly that content.
+export type Push = (path: string, content: string, message: string) => boolean;
 
-export async function publishWeeks(ctx: Context, publisher: Publisher = gitPublisher(ctx)): Promise<string[]> {
+export function publishWeeks(ctx: Context, push: Push = gitPublisher(ctx)): string[] {
   const { store } = ctx;
   const out: string[] = [];
-  for (const week of unpublishedWeeks(store)) {
-    if (!(await publisher.placed(week))) {
-      out.push(`${week.id}: the order is not placed yet`);
-      continue;
-    }
-    const path = `site-data/weeks/${week.id}.json`;
-    const content = `${JSON.stringify(siteWeek(store, week.id), null, 2)}\n`;
-    const leaks = leakProblems(path, content);
-    if (leaks.length) throw new Error(`Not publishing ${week.id}: ${leaks.join(" ")}`);
-    const pushed = publisher.push(path, content, `Publish week ${isoWeek(week.id)}'s recipes`);
-    store.set(publishedKey(week.id), new Date().toISOString());
-    out.push(`${week.id}: ${pushed ? "published" : "already on the site"}`);
+  for (const p of pendingWeeks(store)) {
+    const leaks = leakProblems(p.path, p.content);
+    if (leaks.length) throw new Error(`Not publishing ${p.weekId}: ${leaks.join(" ")}`);
+    const pushed = push(p.path, p.content, `Publish week ${isoWeek(p.weekId)}'s recipes`);
+    store.set(publishedKey(p.weekId), p.hash);
+    out.push(`${p.weekId}: ${pushed ? "published" : "already on the site"}`);
   }
   return out;
 }
 
-function gitPublisher(ctx: Context): Publisher {
-  return {
-    placed: async (week) => (await orderState(ctx, week)).placed,
-    push: (path, content, message) => gitPush(join(dataDir(ctx.household.id), "site-repo"), path, content, message),
-  };
+function gitPublisher(ctx: Context): Push {
+  return (path, content, message) => gitPush(join(dataDir(ctx.household.id), "site-repo"), path, content, message);
 }
 
 // Commits one file to main in the clone at `dir`, made from this checkout's
 // origin the first time, and pushes it, trying again on top of whatever
-// reached main meanwhile. A file main already has is left alone: a week on
-// the site stays as it went up, hand edits included.
+// reached main meanwhile. Nothing is committed when main already has that
+// content.
 export function gitPush(dir: string, path: string, content: string, message: string): boolean {
   if (!existsSync(join(dir, ".git"))) {
     const root = new URL("../../", import.meta.url).pathname;
@@ -72,7 +74,7 @@ export function gitPush(dir: string, path: string, content: string, message: str
   for (let attempt = 1; ; attempt++) {
     git("fetch", "-q", "origin", "main");
     git("reset", "-q", "--hard", "origin/main");
-    if (existsSync(join(dir, path))) return false;
+    if (existsSync(join(dir, path)) && readFileSync(join(dir, path), "utf8") === content) return false;
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), content);
     git("add", "--", path);

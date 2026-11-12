@@ -40,7 +40,7 @@ const USAGE = `Usage: npm run wb -- <command> [--household <id>]
                           (for a failed week, only after checking on willys.se that the cart is complete)
   weeks                   list recent weeks and their status
   site-week <pickup-date> print a week's recipes as the recipe site's site-data/weeks/<date>.json
-  publish                 put ordered weeks on the recipe site once their order is placed
+  publish                 put ordered weeks on the recipe site, again when they change
   alert <unit>            email the operator that a systemd unit failed, with its last log lines
                           (at most once every six hours per unit; run by OnFailure=)`;
 
@@ -255,7 +255,7 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
       return;
     }
     case "publish": {
-      const lines = await publishWeeks(ctx);
+      const lines = publishWeeks(ctx);
       for (const line of lines.length ? lines : ["No ordered weeks to publish"]) console.log(line);
       return;
     }

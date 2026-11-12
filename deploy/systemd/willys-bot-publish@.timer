@@ -1,9 +1,8 @@
 # Every five minutes: an ordered week's recipes go on the recipe site a few
-# minutes after its order is placed on willys.se. A run only asks Willys
-# about the cart while an ordered week is waiting to go up, and reuses the
-# saved session, so the frequent checks stay light.
+# minutes after the week is approved, and again after it changes. A run
+# only reads the database unless a week has something new to push.
 [Unit]
-Description=food-bot: publish placed orders' recipes every five minutes (%i)
+Description=food-bot: publish ordered weeks' recipes every five minutes (%i)
 
 [Timer]
 OnCalendar=*:0/5
