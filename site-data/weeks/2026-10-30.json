@@ -4,485 +4,900 @@
     {
       "name": "Slow-cooked beef chili with mushrooms and kidney beans",
       "portions": 6,
+      "fromText": false,
       "recipe": {
         "name": "Slow-cooked beef chili with mushrooms and kidney beans",
         "servings": 6,
-        "summary": "",
-        "equipment": [],
+        "summary": "Beef chuck slow-cooked with mushrooms, cumin and smoked paprika until tender, with rice",
+        "equipment": [
+          "large heavy pot with lid",
+          "saucepan with lid"
+        ],
         "ingredients": [
           {
-            "id": "i1",
-            "name": "beef chuck, in 3 cm cubes",
+            "id": "beef",
+            "name": "beef chuck",
             "qty": 1,
-            "unit": "kg"
+            "unit": "kg",
+            "prep": "in 3 cm cubes"
           },
           {
-            "id": "i2",
-            "name": "mushrooms (500 g), quartered",
-            "qty": 2,
-            "unit": "punnets"
+            "id": "mushrooms",
+            "name": "mushrooms",
+            "qty": 500,
+            "unit": "g",
+            "prep": "quartered"
           },
           {
-            "id": "i3",
-            "name": "yellow onions, chopped",
-            "qty": 3
+            "id": "onion",
+            "name": "yellow onions",
+            "qty": 3,
+            "prep": "chopped"
           },
           {
-            "id": "i4",
-            "name": "garlic",
+            "id": "garlic",
+            "name": "garlic cloves",
             "qty": 4,
-            "unit": "cloves"
+            "prep": "chopped"
           },
           {
-            "id": "i5",
+            "id": "tomatoes",
             "name": "crushed tomatoes",
             "qty": 2,
             "unit": "tins",
             "fromPantry": true
           },
           {
-            "id": "i6",
-            "name": "kidney beans, drained",
+            "id": "beans",
+            "name": "kidney beans",
             "qty": 2,
             "unit": "tins",
+            "prep": "drained and rinsed",
             "fromPantry": true
           },
           {
-            "id": "i7",
+            "id": "chili",
             "name": "chili flakes",
             "qty": 2,
             "unit": "tsp"
           },
           {
-            "id": "i8",
-            "name": "ground cumin, 2 tsp smoked paprika (gluten free)",
+            "id": "cumin",
+            "name": "ground cumin",
             "qty": 2,
             "unit": "tsp"
           },
           {
-            "id": "i9",
-            "name": "Salt, pepper, oil"
+            "id": "paprika",
+            "name": "smoked paprika (gluten free)",
+            "qty": 2,
+            "unit": "tsp"
           },
           {
-            "id": "i10",
-            "name": "Rice to serve",
+            "id": "oil",
+            "name": "oil",
+            "qty": 2,
+            "unit": "tbsp"
+          },
+          {
+            "id": "salt",
+            "name": "salt"
+          },
+          {
+            "id": "pepper",
+            "name": "black pepper"
+          },
+          {
+            "id": "rice",
+            "name": "jasmine rice",
+            "qty": 6,
+            "unit": "dl",
+            "group": "Rice",
             "fromPantry": true
           }
         ],
         "steps": [
           {
-            "id": "s1",
-            "kind": "cook",
-            "text": "Brown the beef in batches in a heavy pot with a little oil, season with salt and pepper.",
+            "id": "cut-beef",
+            "kind": "prep",
+            "text": "Cut the beef into 3 cm cubes, trimming off any large pieces of fat. Season with salt and pepper.",
             "uses": [
               {
-                "ingredient": "i1",
-                "becomes": "browned beef"
+                "ingredient": "beef",
+                "becomes": "beef cubes"
               },
               {
-                "ingredient": "i9",
-                "becomes": "browned oil"
+                "ingredient": "salt"
+              },
+              {
+                "ingredient": "pepper"
               }
             ],
-            "minutes": 0
+            "minutes": 8
           },
           {
-            "id": "s2",
+            "id": "brown",
             "kind": "cook",
-            "text": "Soften the onions, then the mushrooms and garlic, 8 minutes.",
+            "text": "Heat the oil in the large pot on high and brown the beef in three batches, turning the pieces once they come away from the pot, until browned all over. Lift each batch onto a plate. Chop the vegetables between turns.",
             "uses": [
               {
-                "ingredient": "i2",
-                "becomes": "softened mushrooms"
+                "ingredient": "oil"
               },
               {
-                "ingredient": "i3",
-                "becomes": "softened onions"
-              },
-              {
-                "ingredient": "i4",
-                "becomes": "softened garlic"
+                "ingredient": "beef",
+                "becomes": "browned beef"
               }
             ],
-            "minutes": 0,
+            "minutes": 2,
+            "timer": {
+              "minutes": 12,
+              "upTo": 15,
+              "label": "Beef"
+            },
+            "passive": true,
+            "heat": "high"
+          },
+          {
+            "id": "chop",
+            "kind": "prep",
+            "text": "Chop the onions and garlic and quarter the mushrooms.",
+            "uses": [
+              {
+                "ingredient": "onion",
+                "becomes": "chopped onion"
+              },
+              {
+                "ingredient": "garlic",
+                "becomes": "chopped garlic"
+              },
+              {
+                "ingredient": "mushrooms",
+                "becomes": "quartered mushrooms"
+              }
+            ],
+            "minutes": 8
+          },
+          {
+            "id": "soften",
+            "kind": "cook",
+            "text": "Turn the heat to medium and fry the onion in the same pot until soft, then add the mushrooms and garlic and fry until the mushrooms have let out their water.",
+            "uses": [
+              {
+                "ingredient": "onion"
+              },
+              {
+                "ingredient": "mushrooms"
+              },
+              {
+                "ingredient": "garlic"
+              }
+            ],
+            "minutes": 1,
             "timer": {
               "minutes": 8,
-              "label": "Cook"
-            }
+              "upTo": 10,
+              "label": "Onion"
+            },
+            "heat": "medium",
+            "after": [
+              "brown",
+              "chop"
+            ]
           },
           {
-            "id": "s3",
+            "id": "spices",
             "kind": "cook",
-            "text": "Add the spices and chili flakes for a minute, then the tomatoes, the beef and 2 dl water.",
+            "text": "Stir in the cumin, paprika and chili flakes for a minute, then add the tomatoes, the browned beef with its juices and 2 dl water.",
             "uses": [
               {
-                "ingredient": "i1"
+                "ingredient": "cumin"
               },
               {
-                "ingredient": "i5"
+                "ingredient": "paprika"
               },
               {
-                "ingredient": "i7"
+                "ingredient": "chili"
+              },
+              {
+                "ingredient": "tomatoes"
+              },
+              {
+                "ingredient": "beef"
               }
             ],
-            "minutes": 0
+            "minutes": 3,
+            "heat": "medium",
+            "after": [
+              "soften"
+            ]
           },
           {
-            "id": "s4",
+            "id": "simmer",
             "kind": "simmer",
-            "text": "Cover and simmer on low for 2 to 2.5 hours until the beef is tender, stirring now and then.",
+            "text": "Bring to the boil, cover and simmer on low, stirring now and then, until the beef is nearly tender.",
             "uses": [
               {
-                "ingredient": "i1"
+                "ingredient": "beef",
+                "becomes": "chili"
               }
             ],
-            "minutes": 0,
+            "minutes": 1,
             "timer": {
-              "minutes": 120,
-              "upTo": 150,
-              "label": "Simmer"
-            }
+              "minutes": 100,
+              "upTo": 130,
+              "label": "Chili"
+            },
+            "passive": true,
+            "heat": "low",
+            "after": [
+              "spices"
+            ]
           },
           {
-            "id": "s5",
-            "kind": "serve",
-            "text": "Add the beans for the last 20 minutes. Season and serve with rice.",
+            "id": "beans",
+            "kind": "simmer",
+            "text": "Drain and rinse the beans, stir them into the chili and simmer uncovered until the beef falls apart and the sauce has thickened.",
             "uses": [
               {
-                "ingredient": "i6"
-              },
-              {
-                "ingredient": "i10"
+                "ingredient": "beans"
               }
             ],
-            "minutes": 0,
+            "minutes": 2,
             "timer": {
               "minutes": 20,
-              "label": "Serve"
-            }
+              "label": "Beans"
+            },
+            "passive": true,
+            "heat": "low",
+            "after": [
+              "simmer"
+            ]
+          },
+          {
+            "id": "rice",
+            "kind": "simmer",
+            "text": "Put the rice on: rinse it, put it in the saucepan with 9 dl water and a pinch of salt and bring to the boil. Cover, turn to low and cook 12 minutes, then leave it covered off the heat until serving.",
+            "uses": [
+              {
+                "ingredient": "rice"
+              },
+              {
+                "ingredient": "salt"
+              }
+            ],
+            "minutes": 3,
+            "timer": {
+              "minutes": 20,
+              "label": "Rice"
+            },
+            "passive": true,
+            "heat": "low",
+            "after": [
+              "simmer"
+            ]
+          },
+          {
+            "id": "serve",
+            "kind": "serve",
+            "text": "Season the chili with salt and pepper and serve with the rice.",
+            "uses": [
+              {
+                "ingredient": "salt"
+              },
+              {
+                "ingredient": "pepper"
+              },
+              {
+                "ingredient": "rice"
+              }
+            ],
+            "minutes": 2,
+            "after": [
+              "beans",
+              "rice"
+            ]
           }
-        ]
-      },
-      "fromText": true
+        ],
+        "notes": "Better the next day, and freezes well without the rice."
+      }
     },
     {
       "name": "Chicken, tofu and zucchini stir fry with mushrooms, ginger and garlic",
       "portions": 6,
+      "fromText": false,
       "recipe": {
         "name": "Chicken, tofu and zucchini stir fry with mushrooms, ginger and garlic",
         "servings": 6,
-        "summary": "",
-        "equipment": [],
+        "summary": "Crispy tofu and chicken with zucchini and mushrooms in a soy and ginger sauce, with rice",
+        "equipment": [
+          "wok or large frying pan",
+          "saucepan with lid",
+          "plate"
+        ],
         "ingredients": [
           {
-            "id": "i1",
-            "name": "firm tofu (400 g), in cubes, patted dry",
-            "qty": 2,
-            "unit": "packs"
+            "id": "tofu",
+            "name": "firm tofu",
+            "qty": 800,
+            "unit": "g",
+            "prep": "in 2 cm cubes, patted dry"
           },
           {
-            "id": "i2",
-            "name": "skinless chicken breast fillet, in strips",
+            "id": "chicken",
+            "name": "chicken breast fillet",
             "qty": 900,
-            "unit": "g"
+            "unit": "g",
+            "prep": "in thin strips"
           },
           {
-            "id": "i3",
-            "name": "zucchini, in half moons",
-            "qty": 3
-          },
-          {
-            "id": "i4",
-            "name": "mushrooms (250 g), sliced",
-            "qty": 1,
-            "unit": "punnet"
-          },
-          {
-            "id": "i5",
-            "name": "onion, sliced",
-            "qty": 1
-          },
-          {
-            "id": "i6",
-            "name": "garlic, a thumb of ginger, grated",
+            "id": "zucchini",
+            "name": "zucchini",
             "qty": 3,
-            "unit": "cloves"
+            "prep": "in half moons"
           },
           {
-            "id": "i7",
-            "name": "Mrs Chang or Pearl River Bridge mushroom soy (gluten free, at home)",
+            "id": "mushrooms",
+            "name": "mushrooms",
+            "qty": 250,
+            "unit": "g",
+            "prep": "sliced"
+          },
+          {
+            "id": "onion",
+            "name": "onion",
+            "qty": 1,
+            "prep": "sliced"
+          },
+          {
+            "id": "garlic",
+            "name": "garlic cloves",
+            "qty": 3,
+            "prep": "grated"
+          },
+          {
+            "id": "ginger",
+            "name": "fresh ginger",
+            "qty": 30,
+            "unit": "g",
+            "prep": "grated"
+          },
+          {
+            "id": "soy",
+            "name": "mushroom soy (gluten free)",
             "qty": 4,
-            "unit": "tbsp"
+            "unit": "tbsp",
+            "fromPantry": true
           },
           {
-            "id": "i8",
-            "name": "cornflour (majsstärkelse), 1 tsp sugar, chili flakes",
+            "id": "cornflour",
+            "name": "cornflour (majsstärkelse)",
             "qty": 1,
             "unit": "tbsp"
           },
           {
-            "id": "i9",
-            "name": "Oil"
+            "id": "sugar",
+            "name": "sugar",
+            "qty": 1,
+            "unit": "tsp"
           },
           {
-            "id": "i10",
-            "name": "Rice to serve",
+            "id": "chili",
+            "name": "chili flakes",
+            "prep": "to taste"
+          },
+          {
+            "id": "oil",
+            "name": "oil",
+            "qty": 3,
+            "unit": "tbsp"
+          },
+          {
+            "id": "salt",
+            "name": "salt"
+          },
+          {
+            "id": "rice",
+            "name": "jasmine rice",
+            "qty": 6,
+            "unit": "dl",
+            "group": "Rice",
             "fromPantry": true
           }
         ],
         "steps": [
           {
-            "id": "s1",
-            "kind": "cook",
-            "text": "Fry the tofu in oil until golden on all sides, set aside.",
+            "id": "cube-tofu",
+            "kind": "prep",
+            "text": "Cut the tofu into 2 cm cubes and pat them dry with kitchen paper.",
             "uses": [
               {
-                "ingredient": "i1",
-                "becomes": "fried tofu"
-              },
-              {
-                "ingredient": "i9",
-                "becomes": "fried oil"
+                "ingredient": "tofu",
+                "becomes": "tofu cubes"
               }
             ],
-            "minutes": 0
+            "minutes": 4
           },
           {
-            "id": "s2",
+            "id": "fry-tofu",
             "kind": "cook",
-            "text": "Fry the chicken strips over high heat until cooked through, set aside.",
+            "text": "Heat 1 tbsp of the oil in the wok on high and fry the tofu until golden on all sides, turning it every few minutes while you cut the chicken and vegetables. Lift it onto a plate.",
             "uses": [
               {
-                "ingredient": "i2",
+                "ingredient": "oil",
+                "qty": 1
+              },
+              {
+                "ingredient": "tofu",
+                "becomes": "fried tofu"
+              }
+            ],
+            "minutes": 1,
+            "timer": {
+              "minutes": 10,
+              "upTo": 12,
+              "label": "Tofu"
+            },
+            "passive": true,
+            "heat": "high"
+          },
+          {
+            "id": "cut-chicken",
+            "kind": "prep",
+            "text": "Cut the chicken into thin strips.",
+            "uses": [
+              {
+                "ingredient": "chicken",
+                "becomes": "chicken strips"
+              }
+            ],
+            "minutes": 4
+          },
+          {
+            "id": "cut-veg",
+            "kind": "prep",
+            "text": "Cut the zucchini into half moons and slice the onion and mushrooms.",
+            "uses": [
+              {
+                "ingredient": "zucchini",
+                "becomes": "zucchini"
+              },
+              {
+                "ingredient": "onion",
+                "becomes": "sliced onion"
+              },
+              {
+                "ingredient": "mushrooms",
+                "becomes": "sliced mushrooms"
+              }
+            ],
+            "minutes": 6
+          },
+          {
+            "id": "sauce",
+            "kind": "prep",
+            "text": "Grate the garlic and ginger into a small bowl. In a cup, mix the soy, sugar, cornflour, chili flakes and 1 dl water.",
+            "uses": [
+              {
+                "ingredient": "garlic",
+                "becomes": "grated garlic"
+              },
+              {
+                "ingredient": "ginger",
+                "becomes": "grated ginger"
+              },
+              {
+                "ingredient": "soy",
+                "becomes": "sauce"
+              },
+              {
+                "ingredient": "sugar",
+                "becomes": "sauce"
+              },
+              {
+                "ingredient": "cornflour",
+                "becomes": "sauce"
+              },
+              {
+                "ingredient": "chili",
+                "becomes": "sauce"
+              }
+            ],
+            "minutes": 3
+          },
+          {
+            "id": "rice",
+            "kind": "simmer",
+            "text": "Put the rice on: rinse it, put it in the saucepan with 9 dl water and a pinch of salt and bring to the boil. Cover, turn to low and cook 12 minutes, then leave it covered off the heat until serving.",
+            "uses": [
+              {
+                "ingredient": "rice"
+              },
+              {
+                "ingredient": "salt"
+              }
+            ],
+            "minutes": 3,
+            "timer": {
+              "minutes": 20,
+              "label": "Rice"
+            },
+            "passive": true,
+            "heat": "low"
+          },
+          {
+            "id": "fry-chicken",
+            "kind": "cook",
+            "text": "Add 1 tbsp oil to the wok and fry the chicken strips on high, stirring, until cooked through with no pink inside. Lift them onto the plate with the tofu.",
+            "uses": [
+              {
+                "ingredient": "oil",
+                "qty": 1
+              },
+              {
+                "ingredient": "chicken",
                 "becomes": "fried chicken"
               }
             ],
-            "minutes": 0
+            "minutes": 1,
+            "timer": {
+              "minutes": 6,
+              "upTo": 8,
+              "label": "Chicken"
+            },
+            "heat": "high",
+            "after": [
+              "fry-tofu",
+              "cut-chicken"
+            ]
           },
           {
-            "id": "s3",
+            "id": "fry-veg",
             "kind": "cook",
-            "text": "Fry the zucchini until browned, then the onion and mushrooms.",
+            "text": "Add the last of the oil and fry the zucchini until browned, then add the onion and mushrooms and fry until soft.",
             "uses": [
               {
-                "ingredient": "i3",
-                "becomes": "fried zucchini"
+                "ingredient": "oil",
+                "qty": 1
               },
               {
-                "ingredient": "i4",
-                "becomes": "fried mushrooms"
+                "ingredient": "zucchini"
               },
               {
-                "ingredient": "i5",
-                "becomes": "fried onion"
+                "ingredient": "onion"
+              },
+              {
+                "ingredient": "mushrooms"
               }
             ],
-            "minutes": 0
+            "minutes": 1,
+            "timer": {
+              "minutes": 7,
+              "upTo": 9,
+              "label": "Vegetables"
+            },
+            "heat": "high",
+            "after": [
+              "fry-chicken",
+              "cut-veg"
+            ]
           },
           {
-            "id": "s4",
+            "id": "aromatics",
             "kind": "cook",
-            "text": "Add garlic and ginger for a minute.",
+            "text": "Stir in the grated garlic and ginger and fry for a minute.",
             "uses": [
               {
-                "ingredient": "i6"
-              }
-            ],
-            "minutes": 0
-          },
-          {
-            "id": "s5",
-            "kind": "cook",
-            "text": "Mix the soy, sugar, chili and cornflour with 1 dl water, pour in and let it thicken.",
-            "uses": [
-              {
-                "ingredient": "i7"
+                "ingredient": "garlic"
               },
               {
-                "ingredient": "i8"
+                "ingredient": "ginger"
               }
             ],
-            "minutes": 0
+            "minutes": 1,
+            "heat": "high",
+            "after": [
+              "fry-veg",
+              "sauce"
+            ]
           },
           {
-            "id": "s6",
+            "id": "thicken",
+            "kind": "cook",
+            "text": "Stir the sauce, pour it in and let it bubble until it thickens and turns glossy.",
+            "uses": [
+              {
+                "ingredient": "soy"
+              },
+              {
+                "ingredient": "sugar"
+              },
+              {
+                "ingredient": "cornflour"
+              },
+              {
+                "ingredient": "chili"
+              }
+            ],
+            "minutes": 1,
+            "timer": {
+              "minutes": 2,
+              "label": "Sauce"
+            },
+            "heat": "medium",
+            "after": [
+              "aromatics"
+            ]
+          },
+          {
+            "id": "serve",
             "kind": "serve",
-            "text": "Return the tofu and chicken, toss and serve with rice.",
+            "text": "Put the fried tofu and chicken back in the wok, toss until hot and coated, and serve with the rice.",
             "uses": [
               {
-                "ingredient": "i1"
+                "ingredient": "tofu"
               },
               {
-                "ingredient": "i2"
+                "ingredient": "chicken"
               },
               {
-                "ingredient": "i10"
+                "ingredient": "rice"
               }
             ],
-            "minutes": 0
+            "minutes": 2,
+            "after": [
+              "thicken",
+              "rice"
+            ]
           }
-        ]
-      },
-      "fromText": true
+        ],
+        "notes": "Keeps 2 days in the fridge. The tofu goes soft when reheated: fry leftovers in a hot pan."
+      }
     },
     {
       "name": "Coconut chicken and butternut curry with rice",
       "portions": 6,
+      "fromText": false,
       "recipe": {
         "name": "Coconut chicken and butternut curry with rice",
         "servings": 6,
-        "summary": "",
-        "equipment": [],
+        "summary": "Mild coconut curry with chicken thigh, butternut squash and lime, with rice",
+        "equipment": [
+          "large pot",
+          "saucepan with lid",
+          "plate"
+        ],
         "ingredients": [
           {
-            "id": "i1",
-            "name": "kycklinglårfilé (2 x 700 g)",
+            "id": "chicken",
+            "name": "chicken thigh fillets",
             "qty": 1400,
-            "unit": "g"
+            "unit": "g",
+            "prep": "in bite-size pieces"
           },
           {
-            "id": "i2",
-            "name": "butternutpumpa",
+            "id": "squash",
+            "name": "butternut squash",
             "qty": 1,
-            "unit": "kg"
+            "unit": "kg",
+            "prep": "peeled, in 2 cm cubes"
           },
           {
-            "id": "i3",
+            "id": "onion",
             "name": "yellow onions",
-            "qty": 2
+            "qty": 2,
+            "prep": "chopped"
           },
           {
-            "id": "i4",
+            "id": "garlic",
             "name": "garlic cloves",
-            "qty": 4
+            "qty": 4,
+            "prep": "grated"
           },
           {
-            "id": "i5",
+            "id": "ginger",
             "name": "fresh ginger",
             "qty": 30,
-            "unit": "g"
+            "unit": "g",
+            "prep": "grated"
           },
           {
-            "id": "i6",
-            "name": "limes (juice and zest)",
-            "qty": 2
-          },
-          {
-            "id": "i7",
+            "id": "coconut-milk",
             "name": "coconut milk",
             "qty": 2,
             "unit": "cans",
             "fromPantry": true
           },
           {
-            "id": "i8",
-            "name": "chili flakes to taste (gluten free)"
+            "id": "lime",
+            "name": "limes",
+            "qty": 2,
+            "prep": "zest and juice"
           },
           {
-            "id": "i9",
+            "id": "chili",
+            "name": "chili flakes (gluten free)",
+            "prep": "to taste"
+          },
+          {
+            "id": "oil",
+            "name": "oil",
+            "qty": 2,
+            "unit": "tbsp"
+          },
+          {
+            "id": "salt",
             "name": "salt"
           },
           {
-            "id": "i10",
-            "name": "rice to serve",
+            "id": "rice",
+            "name": "jasmine rice",
+            "qty": 6,
+            "unit": "dl",
+            "group": "Rice",
             "fromPantry": true
           }
         ],
         "steps": [
           {
-            "id": "s1",
+            "id": "cut-chicken",
             "kind": "prep",
-            "text": "Cube the butternut and chop the onion. Grate the ginger and garlic.",
+            "text": "Cut the chicken into bite-size pieces.",
             "uses": [
               {
-                "ingredient": "i2",
-                "becomes": "cubed butternut"
+                "ingredient": "chicken",
+                "becomes": "chicken pieces"
+              }
+            ],
+            "minutes": 5
+          },
+          {
+            "id": "brown",
+            "kind": "cook",
+            "text": "Heat the oil in the large pot on high and brown the chicken in two batches, turning the pieces once they come away from the pot. Lift each batch onto a plate. Prepare the vegetables between turns.",
+            "uses": [
+              {
+                "ingredient": "oil"
               },
               {
-                "ingredient": "i3",
+                "ingredient": "chicken",
+                "becomes": "browned chicken"
+              }
+            ],
+            "minutes": 2,
+            "timer": {
+              "minutes": 10,
+              "upTo": 12,
+              "label": "Chicken"
+            },
+            "passive": true,
+            "heat": "high"
+          },
+          {
+            "id": "chop",
+            "kind": "prep",
+            "text": "Peel the squash and cut it into 2 cm cubes, chop the onions and grate the garlic and ginger.",
+            "uses": [
+              {
+                "ingredient": "squash",
+                "becomes": "squash cubes"
+              },
+              {
+                "ingredient": "onion",
                 "becomes": "chopped onion"
               },
               {
-                "ingredient": "i4",
+                "ingredient": "garlic",
                 "becomes": "grated garlic"
               },
               {
-                "ingredient": "i5",
+                "ingredient": "ginger",
                 "becomes": "grated ginger"
               }
             ],
-            "minutes": 0
+            "minutes": 12
           },
           {
-            "id": "s2",
+            "id": "soften",
             "kind": "cook",
-            "text": "Brown the chicken in a pot, set aside. Soften the onion, ginger, garlic and chili flakes.",
+            "text": "Turn the heat to medium and fry the onion, garlic, ginger and chili flakes in the same pot until soft.",
             "uses": [
               {
-                "ingredient": "i1",
-                "becomes": "browned chicken"
+                "ingredient": "onion"
               },
               {
-                "ingredient": "i3",
-                "becomes": "softened onion"
+                "ingredient": "garlic"
               },
               {
-                "ingredient": "i4",
-                "becomes": "softened garlic"
+                "ingredient": "ginger"
               },
               {
-                "ingredient": "i5",
-                "becomes": "softened ginger"
-              },
-              {
-                "ingredient": "i8",
-                "becomes": "softened chili"
+                "ingredient": "chili"
               }
             ],
-            "minutes": 0
-          },
-          {
-            "id": "s3",
-            "kind": "simmer",
-            "text": "Add the butternut, chicken and coconut milk. Simmer 25 to 30 minutes until tender.",
-            "uses": [
-              {
-                "ingredient": "i1"
-              },
-              {
-                "ingredient": "i2"
-              },
-              {
-                "ingredient": "i7"
-              }
-            ],
-            "minutes": 0,
+            "minutes": 1,
             "timer": {
-              "minutes": 25,
-              "upTo": 30,
-              "label": "Simmer"
-            }
+              "minutes": 4,
+              "upTo": 5,
+              "label": "Onion"
+            },
+            "heat": "medium",
+            "after": [
+              "brown",
+              "chop"
+            ]
           },
           {
-            "id": "s4",
-            "kind": "serve",
-            "text": "Finish with lime juice and zest and salt. Serve with rice.",
+            "id": "curry",
+            "kind": "simmer",
+            "text": "Add the squash, the coconut milk and the browned chicken with its juices. Bring to the boil, then simmer on low until the squash is soft.",
             "uses": [
               {
-                "ingredient": "i6"
+                "ingredient": "squash"
               },
               {
-                "ingredient": "i9"
+                "ingredient": "coconut-milk"
               },
               {
-                "ingredient": "i10"
+                "ingredient": "chicken",
+                "becomes": "curry"
               }
             ],
-            "minutes": 0
+            "minutes": 2,
+            "timer": {
+              "minutes": 20,
+              "upTo": 25,
+              "label": "Curry"
+            },
+            "passive": true,
+            "heat": "low",
+            "after": [
+              "soften"
+            ]
+          },
+          {
+            "id": "rice",
+            "kind": "simmer",
+            "text": "Put the rice on: rinse it, put it in the saucepan with 9 dl water and a pinch of salt and bring to the boil. Cover, turn to low and cook 12 minutes, then leave it covered off the heat until serving.",
+            "uses": [
+              {
+                "ingredient": "rice"
+              },
+              {
+                "ingredient": "salt"
+              }
+            ],
+            "minutes": 3,
+            "timer": {
+              "minutes": 20,
+              "label": "Rice"
+            },
+            "passive": true,
+            "heat": "low"
+          },
+          {
+            "id": "serve",
+            "kind": "serve",
+            "text": "Zest the limes into the curry and squeeze in the juice, add salt to taste and serve with the rice.",
+            "uses": [
+              {
+                "ingredient": "lime"
+              },
+              {
+                "ingredient": "salt"
+              },
+              {
+                "ingredient": "rice"
+              }
+            ],
+            "minutes": 3,
+            "after": [
+              "curry",
+              "rice"
+            ]
           }
-        ]
-      },
-      "fromText": true
+        ],
+        "notes": "Freezes well without the rice."
+      }
     }
   ]
 }
