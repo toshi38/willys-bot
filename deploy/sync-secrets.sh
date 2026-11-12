@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Copies food-bot's secrets to hermes, where each is encrypted as a machine-bound systemd
-# credential. Run from the Mac after creating or rotating one.
+# Copies food-bot's secrets to the server ($SERVER_HOST, an ssh host), where each is encrypted
+# as a machine-bound systemd credential. Run from your own machine after creating or rotating one.
 # All three come from Infisical (project Food Bot, prod), read with your own Infisical login:
 #   RESEND_API_KEY   full access, for sending and reading received mail
 #   WILLYS_USERNAME  the household's willys.se login
 #   WILLYS_PASSWORD
 set -euo pipefail
 
-host="${SERVER_HOST:-hermes}"
+host="${SERVER_HOST:?set SERVER_HOST to the ssh host of the server}"
 project="${INFISICAL_PROJECT_ID:-b83a832f-b552-48c8-bfa2-f4cb0f0878d9}" # Food Bot, in Lau Engineering AB
 env="${INFISICAL_ENV:-prod}"
 

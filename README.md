@@ -97,7 +97,7 @@ Wednesdays at 07:00, and an hourly update that fast-forwards the server to `main
 operator (`operator` in `household.json`, or the first member) its last log lines, at most
 once every six hours per unit.
 
-From your own machine, once (set `SERVER_HOST` to the server's ssh host, which is `hermes` unless set):
+From your own machine, once with `SERVER_HOST` set to the server's ssh host:
 
 ```sh
 deploy/sync-secrets.sh                 # Resend key and Willys login from Infisical (Food Bot)
