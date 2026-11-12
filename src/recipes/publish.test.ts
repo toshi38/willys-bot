@@ -42,6 +42,11 @@ test("ordered weeks go on the site as soon as they are approved, and again only 
   assert.deepEqual(publishWeeks(ctx, push), [`${day(4)}: published`]);
   assert.deepEqual(JSON.parse(pushed.at(-1)!.content).dishes.map((d: { name: string }) => d.name).sort(), ["Soup", "Stew"]);
   assert.deepEqual(publishWeeks(ctx, push), []);
+
+  // A week already picked up is not replaced, since the site's copy may be edited by hand.
+  const s = store.saveRecipe({ name: "Salad", ingredients: "x", method: "y", structured: sampleRecipe(2) }, "member");
+  store.addDish(day(-3), { name: "Salad", portions: 2, recipeId: s.id }, "member");
+  assert.deepEqual(publishWeeks(ctx, push), []);
 });
 
 test("a week's file is committed to main and pushed, and content main already has is not committed again", () => {

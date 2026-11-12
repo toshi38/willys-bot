@@ -12,7 +12,7 @@ import { isoWeek } from "./site.ts";
 // Puts a week's recipes on the recipe site as soon as the week is ordered,
 // that is approved with its cart filled, so the household can read them
 // ahead of the pickup. Until checkout the household can still change the
-// dishes, so a week whose content changes goes up again. The week goes into
+// dishes, so a week whose content changes before its pickup goes up again. The week goes into
 // site-data/weeks/<pickup>.json in a clone of this repository kept next to
 // the household's data, and is pushed to main, which Netlify builds from.
 
@@ -26,7 +26,9 @@ export interface Pending {
 }
 
 // Ordered weeks from the last two weeks on (older ones were cooked long
-// ago) whose content differs from what last went up.
+// ago) that are not on the site yet, or whose content differs from what
+// last went up while their pickup is still ahead. A week once picked up
+// stays on the site as it is, hand edits included.
 export function pendingWeeks(store: Store, today = localDate(new Date())): Pending[] {
   const from = localDate(new Date(new Date(`${today}T12:00:00`).getTime() - 14 * 86_400_000));
   return store
@@ -36,7 +38,10 @@ export function pendingWeeks(store: Store, today = localDate(new Date())): Pendi
       const content = `${JSON.stringify(siteWeek(store, w.id), null, 2)}\n`;
       return { weekId: w.id, path: `site-data/weeks/${w.id}.json`, content, hash: createHash("sha256").update(content).digest("hex") };
     })
-    .filter((p) => store.get(publishedKey(p.weekId)) !== p.hash);
+    .filter((p) => {
+      const published = store.get(publishedKey(p.weekId));
+      return published === null || (published !== p.hash && p.weekId >= today);
+    });
 }
 
 // Writes the file into the site's data and pushes it; false when the site
