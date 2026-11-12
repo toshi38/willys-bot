@@ -13,8 +13,9 @@ import { isoWeek } from "./site.ts";
 // that is approved with its cart filled, so the household can read them
 // ahead of the pickup. Until checkout the household can still change the
 // dishes, so a week whose content changes before its pickup goes up again. The week goes into
-// site-data/weeks/<pickup>.json in a clone of this repository kept next to
-// the household's data, and is pushed to main, which Netlify builds from.
+// weeks/<pickup>.json in the household's site repository (`site.repo` in
+// household.json), cloned next to the household's data, and is pushed to
+// main, which Netlify builds from.
 
 const publishedKey = (weekId: string) => `site.publishedHash.${weekId}`;
 
@@ -36,7 +37,7 @@ export function pendingWeeks(store: Store, today = localDate(new Date())): Pendi
     .filter((w) => w.status === "applied" && w.id >= from)
     .map((w) => {
       const content = `${JSON.stringify(siteWeek(store, w.id), null, 2)}\n`;
-      return { weekId: w.id, path: `site-data/weeks/${w.id}.json`, content, hash: createHash("sha256").update(content).digest("hex") };
+      return { weekId: w.id, path: `weeks/${w.id}.json`, content, hash: createHash("sha256").update(content).digest("hex") };
     })
     .filter((p) => {
       const published = store.get(publishedKey(p.weekId));
@@ -48,8 +49,9 @@ export function pendingWeeks(store: Store, today = localDate(new Date())): Pendi
 // already has exactly that content.
 export type Push = (path: string, content: string, message: string) => boolean;
 
-export function publishWeeks(ctx: Context, push: Push = gitPublisher(ctx)): string[] {
+export function publishWeeks(ctx: Context, push: Push | null = gitPublisher(ctx)): string[] {
   const { store } = ctx;
+  if (!push) return [];
   const out: string[] = [];
   for (const p of pendingWeeks(store)) {
     const leaks = leakProblems(p.path, p.content);
@@ -61,21 +63,22 @@ export function publishWeeks(ctx: Context, push: Push = gitPublisher(ctx)): stri
   return out;
 }
 
-function gitPublisher(ctx: Context): Push {
-  return (path, content, message) => gitPush(join(dataDir(ctx.household.id), "site-repo"), path, content, message);
+// Null when the household has no site repository.
+function gitPublisher(ctx: Context): Push | null {
+  const repo = ctx.household.config.site?.repo;
+  if (!repo) return null;
+  return (path, content, message) => gitPush(join(dataDir(ctx.household.id), "site-repo"), repo, path, content, message);
 }
 
-// Commits one file to main in the clone at `dir`, made from this checkout's
-// origin the first time, and pushes it, trying again on top of whatever
-// reached main meanwhile. Nothing is committed when main already has that
-// content.
-export function gitPush(dir: string, path: string, content: string, message: string): boolean {
+// Commits one file to main in the clone of `repo` at `dir`, cloning it the
+// first time, and pushes it, trying again on top of whatever reached main
+// meanwhile. Nothing is committed when main already has that content.
+export function gitPush(dir: string, repo: string, path: string, content: string, message: string): boolean {
   if (!existsSync(join(dir, ".git"))) {
-    const root = new URL("../../", import.meta.url).pathname;
-    const origin = execFileSync("git", ["-C", root, "remote", "get-url", "origin"], { encoding: "utf8" }).trim();
-    execFileSync("git", ["clone", "-q", "--branch", "main", origin, dir], { stdio: ["ignore", "ignore", "pipe"] });
+    execFileSync("git", ["clone", "-q", "--branch", "main", repo, dir], { stdio: ["ignore", "ignore", "pipe"] });
   }
   const git = (...args: string[]) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  git("remote", "set-url", "origin", repo);
   for (let attempt = 1; ; attempt++) {
     git("fetch", "-q", "origin", "main");
     git("reset", "-q", "--hard", "origin/main");

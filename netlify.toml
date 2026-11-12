@@ -1,5 +1,6 @@
-# The public recipe site, built by Netlify from site-data/ (the weeks
-# hermes exports) and src/recipes/. The build stops, and nothing is
+# The recipe site with the example data in site-data/, built by Netlify
+# for this repository's deploy previews. A household's real site builds
+# from its own data repository (see README). The build stops, and nothing is
 # deployed, when the site's tests fail, or when the data does not parse
 # or looks like it carries a secret.
 [build]

@@ -31,7 +31,7 @@ test("ordered weeks go on the site as soon as they are approved, and again only 
   const push = (path: string, content: string, message: string) => (pushed.push({ path, content, message }), true);
   const ctx = { store } as unknown as Context;
   assert.deepEqual(publishWeeks(ctx, push), [`${day(4)}: published`, `${day(-3)}: published`]);
-  const last = pushed.find((p) => p.path === `site-data/weeks/${day(-3)}.json`)!;
+  const last = pushed.find((p) => p.path === `weeks/${day(-3)}.json`)!;
   const week = JSON.parse(last.content);
   assert.deepEqual([week.pickup, week.dishes[0].name, week.dishes[0].fromText], [day(-3), "Stew", false]);
   assert.match(last.message, /^Publish week \d+'s recipes$/);
@@ -63,15 +63,15 @@ test("a week's file is committed to main and pushed, and content main already ha
     git(join(root, "site"), "config", "user.name", "t");
     git(join(root, "site"), "config", "user.email", "t@example.com");
 
-    assert.equal(gitPush(join(root, "site"), "site-data/weeks/2026-11-13.json", '{"a":1}\n', "Publish week 46's recipes"), true);
+    assert.equal(gitPush(join(root, "site"), origin, "weeks/2026-11-13.json", '{"a":1}\n', "Publish week 46's recipes"), true);
     assert.equal(git(origin, "log", "-1", "--format=%s", "main"), "Publish week 46's recipes");
-    assert.equal(git(origin, "show", "main:site-data/weeks/2026-11-13.json"), '{"a":1}');
-    assert.equal(gitPush(join(root, "site"), "site-data/weeks/2026-11-13.json", '{"a":1}\n', "Publish week 46's recipes"), false);
+    assert.equal(git(origin, "show", "main:weeks/2026-11-13.json"), '{"a":1}');
+    assert.equal(gitPush(join(root, "site"), origin, "weeks/2026-11-13.json", '{"a":1}\n', "Publish week 46's recipes"), false);
     assert.equal(git(origin, "rev-list", "--count", "main"), "2");
-    assert.equal(gitPush(join(root, "site"), "site-data/weeks/2026-11-13.json", '{"a":2}\n', "Publish week 46's recipes"), true);
+    assert.equal(gitPush(join(root, "site"), origin, "weeks/2026-11-13.json", '{"a":2}\n', "Publish week 46's recipes"), true);
     assert.equal(git(origin, "rev-list", "--count", "main"), "3");
-    assert.equal(git(origin, "show", "main:site-data/weeks/2026-11-13.json"), '{"a":2}');
-    assert.equal(readFileSync(join(root, "site", "site-data/weeks/2026-11-13.json"), "utf8"), '{"a":2}\n');
+    assert.equal(git(origin, "show", "main:weeks/2026-11-13.json"), '{"a":2}');
+    assert.equal(readFileSync(join(root, "site", "weeks/2026-11-13.json"), "utf8"), '{"a":2}\n');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

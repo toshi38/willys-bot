@@ -255,6 +255,10 @@ async function run(ctx: Context, command: string, rest: string[], values: Record
       return;
     }
     case "publish": {
+      if (!ctx.household.config.site) {
+        console.log("No recipe site: set site.repo in household.json to publish");
+        return;
+      }
       const lines = publishWeeks(ctx);
       for (const line of lines.length ? lines : ["No ordered weeks to publish"]) console.log(line);
       return;

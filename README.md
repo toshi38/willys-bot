@@ -77,16 +77,24 @@ nothing is posted and email carries on as usual.
 
 ## Recipe site
 
-The week's recipes are published at food.toshi38.com: a page per week, each recipe in full, and a
-cook mode that walks the steps one at a time with timers. Netlify builds it from `site-data/`
-(`netlify.toml`); `npm run site -- --data site-data` builds it locally into `dist/`.
+Each ordered week's recipes go on a static site: a page per week, each recipe in full, and a cook
+mode that walks the steps one at a time with timers. The site's code is here (`site/`,
+`src/recipes/`); a household's weeks live in a repository of their own, set as `site.repo` in
+`household.json`. The publish timer pushes each ordered week there as `weeks/<pickup>.json`, and a
+Netlify site builds from that repository by cloning this one. Without `site.repo` nothing is
+published. [toshi38/food](https://github.com/toshi38/food) is a working example of such a
+repository, with its `netlify.toml`.
+
+`site-data/` here is example data. Netlify builds it for this repository's deploy previews
+(`netlify.toml`), so a change to the site can be seen before it lands, and
+`npm run site -- --data site-data` builds it locally into `dist/`.
 
 How a recipe is written (steps in cooking order, timers, passive steps that run while you carry
 on) is in `.claude/skills/recipe-writing/SKILL.md`, and `src/recipes/check.ts` enforces it.
 
-The site is public, so secrets are kept out of it twice: the pre-commit hook (`.githooks/`, turned on by
-`npm install`) checks staged `site-data/` files and runs gitleaks when it is installed, and the
-Netlify build refuses data that looks like it carries a secret.
+The site is public, so secrets are kept out of it: the publish job refuses a week that looks like
+it carries one, the pre-commit hook (`.githooks/`, turned on by `npm install`) checks staged
+`site-data/` files and runs gitleaks when it is installed, and the build refuses such data too.
 
 ## Running it on your server
 

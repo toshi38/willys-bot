@@ -48,6 +48,10 @@ export const HouseholdConfig = z.object({
   // posted there with Approve and Skip buttons, and the bot's channel works
   // like its email address. `bot` is the gateway's id for food-bot.
   slack: z.object({ bot: z.string().default("food") }).optional(),
+  // Where the household's recipe site gets its data: a git repository that
+  // ordered weeks are pushed to as weeks/<pickup>.json, which a Netlify site
+  // builds from. Without it nothing is published.
+  site: z.object({ repo: z.string().min(1) }).optional(),
   // Who hears about failed runs. Defaults to the first member.
   operator: z.string().email().optional(),
   // Rules code enforces on every product bought, whatever the model
