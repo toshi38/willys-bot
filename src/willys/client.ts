@@ -1,5 +1,5 @@
 import { encryptCredential } from "./crypto.ts";
-import type { CampaignKind, Cart, Customer, PickupSlot, PickupSlots, ProductInfo, ProductPage, Promotion, Store } from "./types.ts";
+import type { CampaignKind, Cart, CartStatus, Customer, Order, OrderDetails, PickupSlot, PickupSlots, ProductInfo, ProductPage, Promotion, Store } from "./types.ts";
 
 // Client for the JSON API behind willys.se. It keeps a cookie jar so a
 // logged-in session can be saved and reused instead of logging in on every
@@ -50,7 +50,7 @@ export class WillysClient {
     const method = init.method ?? "GET";
     if (method !== "GET") {
       headers.set("X-CSRF-TOKEN", this.#csrf ?? (await this.csrfToken()));
-      if (init.body) headers.set("Content-Type", "application/json");
+      if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     }
 
     const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
@@ -199,16 +199,54 @@ export class WillysClient {
     return this.json<PickupSlot | null>("/axfood/rest/v2/slot/slotInCart");
   }
 
-  orders(): Promise<unknown> {
+  // The account's orders, newest first.
+  orders(): Promise<Order[]> {
     return this.json("/axfood/rest/account/orders");
   }
 
-  orderDetails(orderNumber: string): Promise<unknown> {
-    return this.json(`/axfood/rest/orderdata?q=${encodeURIComponent(orderNumber)}`);
+  order(orderNumber: string): Promise<OrderDetails> {
+    return this.json(`/axfood/rest/v2/order/orders/${encodeURIComponent(orderNumber)}`);
+  }
+
+  // Opens a placed order for changes, as "Ändra order" does: the cart
+  // becomes the order's lines with its slot, and the order shows as being
+  // changed until it is placed again or the change is cancelled.
+  async editOrder(orderNumber: string): Promise<Cart> {
+    await this.json(`/axfood/rest/v2/cart/carts?orderNumber=${encodeURIComponent(orderNumber)}`, { method: "POST" });
+    return this.cart();
+  }
+
+  // Gives up a change to a placed order: the order stays as it was placed
+  // and the cart is emptied.
+  async cancelOrderEdit(): Promise<void> {
+    await this.json("/axfood/rest/v2/cart?cancelPossibleContinueCart=true", { method: "DELETE" });
+  }
+
+  cartStatus(storeId: string): Promise<CartStatus> {
+    return this.json(`/axfood/rest/v2/cart/status?storeId=${encodeURIComponent(storeId)}&checkStock=true`);
+  }
+
+  // Places the cart as the changed version of a placed order, paying with a
+  // card saved on the account. Returns where willys.se sends the browser
+  // next: the order's confirmation page when the change went through, or a
+  // payment page when the card has to be approved first.
+  async replaceOrder(orderNumber: string, cardId: string): Promise<string | null> {
+    await this.json("/axfood/rest/v2/checkout/paymentmode", { method: "POST", body: JSON.stringify({ mode: CARD_PAYMENT }) });
+    const form = new URLSearchParams({ saveCard: "false", selectedCard: cardId, orderRef: orderNumber, klarnaAuthorizationToken: "", userClickedContinue: "false" });
+    const path = "/axfood/rest/v2/singlestepcheckout/placeOrder";
+    const res = await this.request(path, { method: "POST", body: form.toString(), headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+    const text = await res.text();
+    // 402 carries the payment page to go to.
+    if (res.status >= 400 && res.status !== 402) throw new WillysError(`POST ${path}: HTTP ${res.status} ${text.slice(0, 200)}`, res.status);
+    return res.headers.get("location");
   }
 }
 
-function parseSek(label: string | undefined): number | null {
-  const m = label?.match(/\d+(?:[.,]\d+)?/);
+// The payment type of an order paid by card.
+export const CARD_PAYMENT = "PspPayexAll";
+
+// "1 412,15 kr" as a number; null when there is none.
+export function parseSek(label: string | null | undefined): number | null {
+  const m = label?.replace(/[\s\u00a0]/g, "").replace("−", "-").match(/-?\d+(?:[.,]\d+)?/);
   return m ? Number(m[0].replace(",", ".")) : null;
 }

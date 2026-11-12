@@ -19,7 +19,7 @@ import {
 import { describePicks, parsePicks, picking, pickProblem, setPicks } from "./picks.ts";
 import { sendSurvey } from "./survey.ts";
 import { editable, localDate, postChanges, tellHousehold, toSlack } from "./week.ts";
-import { afterChange, announceChanges, decide, expireWeeks, orderState, planWeek, redraftWeek, renderWeek, type OrderState } from "./weekly.ts";
+import { afterChange, announceChanges, answerOrderChange, decide, expireWeeks, orderState, pendingOrderChange, planWeek, redraftWeek, renderWeek, type OrderState } from "./weekly.ts";
 
 // Email to the bot's address, read from Resend on a timer. Only mail from a
 // household member whose domain the receiving server verified is acted on;
@@ -150,6 +150,15 @@ async function handleEmail(ctx: Context, email: ReceivedEmail, name: string, fro
 
   // A reply about a closed week is about the current shop, if any.
   const week = answered && editable(answered) ? answered : (store.currentWeek(localDate(new Date())) ?? answered);
+  // A plain yes or no answers a waiting question about changing the placed
+  // order at today's prices.
+  const answer = week?.status === "applied" && editable(week) && pendingOrderChange(ctx, week.id) ? classifyReply(text).kind : "change";
+  if (week && answer !== "change") {
+    const note = await answerOrderChange(ctx, week, answer === "approve");
+    log.push(`${email.id} from ${name}: ${answer === "approve" ? "agreed to" : "declined"} the order change: ${note.slice(0, 120)}`);
+    await settle("replying", () => tellHousehold(ctx, { subject: reSubject(email.subject), markdown: note, inReplyTo: email.message_id }, `**${name} emailed:** ${quote(text)}\n\n${note}`));
+    return log;
+  }
   const order = week?.status === "applied" && editable(week) ? await orderState(ctx, week) : null;
   const outcome = await runIntake(ctx, { name, via: "email", subject: email.subject ?? "", text, week, order, thread: [] });
   log.push(`${email.id} from ${name}: ${outcome.summary}`);
@@ -216,6 +225,20 @@ Rules:
 - Your reply goes to every household member. Say concretely what you changed. Keep it short.
 - Write in the language the person wrote in. Never use em dashes or en dashes; use commas, colons or full stops.`;
 
+// What Claude is told about an approved week's order.
+function orderStateText(order: OrderState | null, asked: boolean): string {
+  if (order && !order.placed) {
+    return `approved: the Willys cart is filled but the order is not placed yet${order.closeTime ? ` (it must be placed before ${order.closeTime})` : ""}. Changes you make to the week are copied to the cart automatically`;
+  }
+  const placed = order?.order;
+  if (placed?.editable) {
+    return `approved and the order is placed on willys.se, where it can still be changed${placed.closes ? ` until ${placed.closes}` : ""}. Make the changes they ask for in the week as usual. After your reply the week's changes are applied to the placed order for them, and a line saying how that went is added below your reply: do not say yourself that the order is or is not changed, and do not send them to willys.se. When they only ask to change or update the placed order, you need no tool: say you are on it. A changed order is charged at today's prices; if those have moved since it was placed, they are asked before anything is changed${asked ? ". They have been asked that about an earlier change and have not answered: a plain yes or no from them answers it" : ""}`;
+  }
+  if (placed?.editing) return "approved and the order is placed on willys.se, where someone has it open for changes right now. Changes you make are recorded in the week but do not reach the order until that is finished or cancelled on willys.se";
+  if (placed) return "approved and the order is placed on willys.se, which no longer takes changes to it. Changes you make are recorded in the week but do not reach the order: say so";
+  return "approved, but the Willys cart no longer holds it and no order for this pickup is on willys.se. Changes you make are recorded in the week only: tell them to check the cart and the order on willys.se";
+}
+
 export interface IntakeInput {
   name: string;
   via: "email" | "slack" | "web";
@@ -245,9 +268,7 @@ export async function runIntake(ctx: Context, input: IntakeInput): Promise<z.inf
         ? "waiting for a decision, open for changes"
         : !editable(week)
           ? `${week.status}, no longer open for changes`
-          : input.order && !input.order.placed
-            ? `approved: the Willys cart is filled but the order is not placed yet${input.order.closeTime ? ` (it must be placed before ${input.order.closeTime})` : ""}. Changes you make to the week are copied to the cart automatically`
-            : "approved and the order is already placed on willys.se. Changes you make are recorded in the week but do not reach the order: tell them to change the order on willys.se (Ändra order) at least 24 hours before pickup, and that a changed order is charged at that day's prices, so sale prices can make it cost more or less";
+          : orderStateText(input.order ?? null, pendingOrderChange(ctx, week.id) !== null);
     lines.push("", `## This week's shop (pickup ${week.id}: ${state})`, renderWeek(ctx, week));
   } else {
     lines.push("", "## This week's shop", "No week is planned for the next pickup yet.");

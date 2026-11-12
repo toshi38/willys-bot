@@ -158,17 +158,95 @@ describe("the weekly cycle", () => {
     assert.equal(run.results[0].error, false);
   });
 
-  test("after the order is placed, a change is recorded but the order is never touched", async () => {
+  // An approved week whose order was placed on willys.se, and a message
+  // that removes the beans from the week.
+  async function placedWeek(env: Env): Promise<void> {
     await plannedWeek(env);
     await slack(env, { type: "action", from: stephen, action: { id: "plan.approve", value: WEEK }, where: where() });
     env.willys.placeOrder();
-    const before = env.willys.calls.filter((c) => c.path === "/axfood/rest/cart/addProducts").length;
+  }
+  async function removeBeans(env: Env): Promise<{ reply?: string }> {
     const beans = row<{ id: number }>(env, `SELECT id FROM week_items WHERE product_code = 'BEANS_ST'`);
-    env.claude([{ calls: [{ tool: "week_remove_item", args: { itemId: beans.id } }], output: { reply: "Noted.", redraft: "", summary: "removed beans" } }]);
-    const res = await slack(env, { type: "message", from: stephen, text: "remove the beans", where: where(), thread: [] });
-    assert.equal(env.willys.calls.filter((c) => c.path === "/axfood/rest/cart/addProducts").length, before);
-    assert.equal(res.reply, "Noted.");
-    assert.match(env.claudeLog().at(-1)!.prompt, /already placed on willys\.se/);
+    env.claude([{ calls: [{ tool: "week_remove_item", args: { itemId: beans.id } }], output: { reply: "Removed the beans.", redraft: "", summary: "removed beans" } }]);
+    return slack(env, { type: "message", from: stephen, text: "remove the beans", where: where(), thread: [] });
+  }
+  const placements = (env: Env) => env.willys.calls.filter((c) => c.path === "/axfood/rest/v2/singlestepcheckout/placeOrder").length;
+
+  test("after the order is placed, a change is made in the order and it is placed again", async () => {
+    await placedWeek(env);
+    const order = env.willys.orders[0];
+    const was = order.total;
+    const res = await removeBeans(env);
+    assert.equal(order.lines.has("BEANS_ST"), false);
+    assert.equal(order.lines.get("CHICKEN_ST"), 2);
+    assert.equal(env.willys.editing, null);
+    assert.equal(env.willys.cart.size, 0);
+    assert.match(res.reply ?? "", /^Removed the beans\.\n\nWillys order changed: removed 2 x Kidneybönor 380g\. It is now [\d ,]+ kr \(was [\d ,]+ kr\)\.$/);
+    assert.ok(order.total < was);
+    assert.match(env.claudeLog().at(-1)!.prompt, /the order is placed on willys\.se, where it can still be changed until the day before, 23:59/);
+  });
+
+  test("when prices have moved since the order was placed, the household is asked, and yes changes the order", async () => {
+    await placedWeek(env);
+    const order = env.willys.orders[0];
+    env.willys.setPrice("CHICKEN_ST", 89.9);
+    const res = await removeBeans(env);
+    assert.match(res.reply ?? "", /The placed order is not changed yet/);
+    assert.match(res.reply ?? "", /Today's prices alone make the order 44,00 kr more/);
+    assert.match(res.reply ?? "", /Reply \*\*yes\*\*/);
+    assert.equal(order.lines.has("BEANS_ST"), true);
+    assert.equal(env.willys.editing, null);
+    assert.equal(placements(env), 0);
+
+    const turns = env.claudeLog().length;
+    const yes = await slack(env, { type: "message", from: stephen, text: "yes", where: where(), thread: [] });
+    assert.equal(env.claudeLog().length, turns);
+    assert.match(yes.reply ?? "", /^Willys order changed: removed 2 x Kidneybönor 380g\./);
+    assert.equal(order.lines.has("BEANS_ST"), false);
+    assert.equal(placements(env), 1);
+  });
+
+  test("a no to changing the order at today's prices leaves it as it was placed", async () => {
+    await placedWeek(env);
+    env.willys.setPrice("CHICKEN_ST", 89.9);
+    await removeBeans(env);
+    const no = await slack(env, { type: "message", from: stephen, text: "no", where: where(), thread: [] });
+    assert.match(no.reply ?? "", /the placed order stays as it is/);
+    assert.equal(env.willys.orders[0].lines.has("BEANS_ST"), true);
+    assert.equal(placements(env), 0);
+    // The question is gone: a later yes is a message like any other.
+    env.claude([{ calls: [], output: { reply: "Yes to what?", redraft: "", summary: "unclear" } }]);
+    const later = await slack(env, { type: "message", from: stephen, text: "yes", where: where(), thread: [] });
+    assert.equal(later.reply, "Yes to what?");
+  });
+
+  test("when Willys wants the payment approved, the change is cancelled and the order stays as placed", async () => {
+    await placedWeek(env);
+    env.willys.paymentPage = true;
+    const res = await removeBeans(env);
+    assert.match(res.reply ?? "", /Willys wants the payment approved in a browser/);
+    assert.equal(env.willys.orders[0].lines.has("BEANS_ST"), true);
+    assert.equal(env.willys.editing, null);
+  });
+
+  test("an order Willys has closed for changes is never opened", async () => {
+    await placedWeek(env);
+    env.willys.orders[0].editable = false;
+    const res = await removeBeans(env);
+    assert.match(res.reply ?? "", /Willys no longer takes changes to it/);
+    assert.equal(env.willys.calls.some((c) => c.path === "/axfood/rest/v2/cart/carts"), false);
+    assert.match(env.claudeLog().at(-1)!.prompt, /which no longer takes changes to it/);
+  });
+
+  test("a change that did not reach the placed order goes in with the next message", async () => {
+    await placedWeek(env);
+    env.willys.orders[0].editable = false;
+    await removeBeans(env);
+    env.willys.orders[0].editable = true;
+    env.claude([{ calls: [], output: { reply: "On it.", redraft: "", summary: "order change" } }]);
+    const res = await slack(env, { type: "message", from: stephen, text: "you can change the order", where: where(), thread: [] });
+    assert.match(res.reply ?? "", /^On it\.\n\nWillys order changed: removed 2 x Kidneybönor 380g\./);
+    assert.equal(env.willys.orders[0].lines.has("BEANS_ST"), false);
   });
 
   test("Claude is told to answer in the language the member wrote in", async () => {

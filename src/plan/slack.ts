@@ -6,7 +6,7 @@ import { runIntake } from "./inbox.ts";
 import { describePicks, parsePicks, picking, pickProblem, setPicks } from "./picks.ts";
 import { ratingButtons, ratingText } from "./survey.ts";
 import { editable, localDate, postChanges, toSlack } from "./week.ts";
-import { afterChange, announceChanges, decide, orderState, planWeek, redraftWeek, weekForSlackThread } from "./weekly.ts";
+import { afterChange, announceChanges, answerOrderChange, decide, orderState, pendingOrderChange, planWeek, redraftWeek, weekForSlackThread } from "./weekly.ts";
 
 // food-bot's side of slack-gateway's contract: one request in, one response
 // out. The gateway has already checked the workspace; who may use food-bot
@@ -127,6 +127,12 @@ async function respond(ctx: Context, req: SlackRequest): Promise<SlackResponse> 
   }
   // A message in a closed week's thread is about the current shop, if any.
   const week = inThread && editable(inThread) ? inThread : (store.currentWeek(localDate(new Date())) ?? inThread);
+  // A plain yes or no answers a waiting question about changing the placed
+  // order at today's prices.
+  if (week?.status === "applied" && editable(week) && pendingOrderChange(ctx, week.id)) {
+    const answer = classifyReply(req.text).kind;
+    if (answer !== "change") return { reply: await answerOrderChange(ctx, week, answer === "approve") };
+  }
   const order = week?.status === "applied" && editable(week) ? await orderState(ctx, week) : null;
   const outcome = await runIntake(ctx, { name: member.name, via: "slack", subject: "", text: req.text, week, order, thread: req.thread });
   let reply = outcome.reply;

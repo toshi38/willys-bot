@@ -1,7 +1,8 @@
 # willys-bot
 
 food-bot plans a household's weekly Willys shop around the week's offers, emails the plan, and
-on approval fills the Willys cart and books a pickup slot. Placing the order stays manual.
+on approval fills the Willys cart and books a pickup slot. Placing the order stays manual;
+after that, food-bot changes the placed order itself when a member asks for a change.
 
 ## The weekly shop
 
@@ -27,6 +28,27 @@ After that the week changes only through edits: Claude changes the one item or d
 asks about, and the household is shown the updated plan. Asking for a whole new set of dishes
 redrafts the dishes and keeps every request. Approving fills the cart from the week's items and
 sends the week's recipes.
+
+## Changes after approval
+
+An approved week still takes changes until its pickup day. Where they go depends on where the
+order stands on willys.se:
+
+- **Not placed yet**: the cart is set to the week's items.
+- **Placed, and Willys still takes changes** (until the slot's order cutoff): food-bot opens the
+  order for changes the way "Ändra order" does, sets the lines that differ from the week, and
+  places it again with the card saved on the Willys account. The reply says what changed and the
+  new total.
+- **Placed and closed for changes**: the change is recorded in the week and the reply says it
+  did not reach the order.
+
+Willys charges a changed order at that day's prices. When they have moved since the order was
+placed (the unchanged order no longer costs what it was placed for), nothing is placed: the reply
+gives the old total, what the changed order would cost and how much of that is prices alone, and
+asks. A plain **yes** from a member changes the order if it still costs what they were told;
+**no** leaves it as placed. Whenever the order is not placed again (a no, a payment Willys wants
+approved in a browser, an error), the change is cancelled on willys.se, which leaves the order
+as it was.
 
 ## Ratings
 

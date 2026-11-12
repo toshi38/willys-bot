@@ -2,6 +2,8 @@ import type { Context } from "../core/context.ts";
 import { memberByLogin } from "../core/household.ts";
 import { snapshotCampaigns } from "../core/prices.ts";
 import type { Dish, Recipe, Week, WeekItem } from "../core/store.ts";
+import { CARD_PAYMENT, parseSek } from "../willys/client.ts";
+import type { CartProduct } from "../willys/types.ts";
 import { timeline } from "../recipes/check.ts";
 import { sendToMembers } from "../notify/email.ts";
 import { updateSlack, type SlackButton, type SlackRef } from "../notify/slack.ts";
@@ -15,7 +17,8 @@ import { localDate, nextPickup, postToWeek, tellHousehold, toSlack, weekThread }
 // web UI, Claude edits single dishes and items, and the household is shown
 // the updated plan. Asking for new dishes redrafts the dishes and keeps
 // everything members asked for. Approval fills the Willys cart and books a
-// pickup slot; placing the order stays a manual step on willys.se.
+// pickup slot; placing the order stays a manual step on willys.se. Changes
+// after that reach the placed order while willys.se still takes them.
 
 const idsKey = (weekId: string) => `week.${weekId}.messageIds`;
 const slackKey = (weekId: string) => `week.${weekId}.slack`;
@@ -133,43 +136,193 @@ export async function announceChanges(ctx: Context, weekId: string, opts: { emai
 }
 
 // Where an approved week's order stands on willys.se. Until the order is
-// placed, the cart holds the week with its pickup slot. After that the cart
-// no longer has the slot, and the order itself can only be changed on
-// willys.se ("Ändra order"), which reprices it at that day's prices.
+// placed, the cart holds the week with its pickup slot. A placed order can
+// be changed until willys.se closes it for changes: it is opened into the
+// cart ("Ändra order"), the cart is changed, and the order is placed again,
+// which charges all of it at that day's prices.
 export interface OrderState {
+  // The cart no longer holds the week with its slot.
   placed: boolean;
   // When the order must be placed for the booked slot, as willys.se says it.
   closeTime: string | null;
+  // The order for the week's pickup day; null when willys.se has none.
+  order: PlacedOrder | null;
+}
+
+export interface PlacedOrder {
+  number: string;
+  total: number | null;
+  // Whether willys.se still takes changes to it.
+  editable: boolean;
+  // Someone has it open for changes on willys.se right now.
+  editing: boolean;
+  // Until when it can be changed, as willys.se says it.
+  closes: string | null;
 }
 
 export async function orderState(ctx: Context, week: Week): Promise<OrderState> {
+  const { willys } = ctx;
   await ctx.ensureLogin();
-  const slot = await ctx.willys.slotInCart();
-  const forWeek = !!slot && localDate(new Date(slot.startTime)) === week.id;
-  return { placed: !forWeek, closeTime: forWeek ? (slot.closeTimeFormatted ?? null) : null };
+  const cart = await willys.cart();
+  if (cart.orderReference) return { placed: true, closeTime: null, order: { number: cart.orderReference, total: null, editable: false, editing: true, closes: null } };
+  const slot = await willys.slotInCart();
+  if (slot && localDate(new Date(slot.startTime)) === week.id) return { placed: false, closeTime: slot.closeTimeFormatted ?? null, order: null };
+  const found = (await willys.orders())
+    .filter((o) => o.deliveryDateFrom !== undefined && localDate(new Date(o.deliveryDateFrom)) === week.id)
+    .sort((x, y) => Number(y.editable ?? false) - Number(x.editable ?? false) || (y.placed ?? 0) - (x.placed ?? 0))[0];
+  if (!found) return { placed: true, closeTime: null, order: null };
+  const editable = found.editable === true;
+  const closes = editable ? ((await willys.order(found.orderNumber)).slotCloseTimeFormatted ?? null) : null;
+  return { placed: true, closeTime: null, order: { number: found.orderNumber, total: parseSek(found.total), editable, editing: false, closes } };
 }
 
-// Sets the cart to the approved week's items, for each product the week
-// has ever had, so additions, quantity changes and removals all reach it.
-// Products the week never had are left alone.
-export async function syncCart(ctx: Context, week: Week): Promise<string> {
+// How many of each product the week wants, for each product the week has
+// ever had, so additions, quantity changes and removals all show.
+// Products the week never had are left out, and so left alone.
+function wantedQuantities(ctx: Context, week: Week): Map<string, number> {
   const wanted = new Map<string, number>();
   for (const i of ctx.store.allItems(week.id)) wanted.set(i.productCode, wanted.get(i.productCode) ?? 0);
   for (const i of ctx.store.items(week.id)) wanted.set(i.productCode, (wanted.get(i.productCode) ?? 0) + i.qty);
-  const after = await ctx.willys.setCartQuantities([...wanted].map(([code, qty]) => ({ code, qty })));
+  return wanted;
+}
+
+// A cart line's quantity in pieces: quantity is in grams for products sold
+// by weight.
+const pieces = (p: CartProduct) => p.pickQuantity ?? p.quantity;
+
+// Sets the cart to the approved week's items.
+export async function syncCart(ctx: Context, week: Week): Promise<string> {
+  const after = await ctx.willys.setCartQuantities([...wantedQuantities(ctx, week)].map(([code, qty]) => ({ code, qty })));
   ctx.store.markAnnounced(week.id, week.version);
   return `${after.products.length} products, total ${after.totalPrice ?? "?"}`;
 }
 
+// A change to the placed order that waits for a member's yes, because
+// prices have moved since the order was placed.
+interface PendingOrderChange {
+  order: string;
+  // What the changed order would cost, as the household was told.
+  total: number;
+}
+
+const pendingKey = (weekId: string) => `week.${weekId}.orderChange`;
+
+export function pendingOrderChange(ctx: Context, weekId: string): PendingOrderChange | null {
+  const raw = ctx.store.get(pendingKey(weekId));
+  return raw ? (JSON.parse(raw) as PendingOrderChange) : null;
+}
+
+// Brings the placed order in line with the week: opens it for changes,
+// sets the lines that differ, and places it again with the account's saved
+// card. Returns what to tell the household.
+//
+// Placing a changed order charges every line at today's prices. When those
+// have moved since the order was placed, nothing is placed: the household
+// is told what the changed order would cost and asked, and `confirmed`
+// (their yes) goes through with it if it still costs what they were told.
+// Whenever the order is not placed again, the change is cancelled, which
+// leaves the order as it was.
+export async function changeOrder(ctx: Context, week: Week, order: PlacedOrder, opts: { confirmed?: boolean } = {}): Promise<string> {
+  const { store, willys, household } = ctx;
+  const byHand = "change it on willys.se (Ändra order)";
+  const customer = await ctx.ensureLogin();
+  const cards = (customer.savedCards ?? []).filter((c) => !c.expired);
+  const card = cards.find((c) => c.defaultCard) ?? cards[0];
+  if (!card) return `The placed order is not changed: I can only pay for a changed order with a card saved on the Willys account. To change it, ${byHand}.`;
+
+  const cart = await willys.editOrder(order.number);
+  let replaced = false;
+  let note: string;
+  try {
+    note = await (async () => {
+      if (cart.orderReference !== order.number) throw new Error(`willys.se did not open order ${order.number} for changes`);
+      if (cart.paymentType !== CARD_PAYMENT) return `The placed order is not changed: it was not paid by card, so I cannot place it again. To change it, ${byHand}.`;
+      const inOrder = new Map(cart.products.map((p) => [p.code, pieces(p)]));
+      const changes = [...wantedQuantities(ctx, week)].filter(([code, qty]) => (inOrder.get(code) ?? 0) !== qty);
+      if (!changes.length) {
+        store.markAnnounced(week.id, week.version);
+        store.delete(pendingKey(week.id));
+        return "The placed order already has this week's items, so there was nothing to change in it.";
+      }
+      const what = changes
+        .map(([code, qty]) => {
+          const name = cart.products.find((p) => p.code === code)?.name ?? store.productName(code) ?? code;
+          const had = inOrder.get(code) ?? 0;
+          return qty === 0 ? `removed ${had} x ${name}` : had === 0 ? `added ${qty} x ${name}` : `${name} from ${had} to ${qty}`;
+        })
+        .join(", ");
+      const after = await willys.setCartQuantities(changes.map(([code, qty]) => ({ code, qty })));
+      const status = await willys.cartStatus(household.config.willys.storeId);
+      const was = order.total;
+      const unchanged = parseSek(cart.totalPrice);
+      const now = parseSek(after.totalPrice);
+      if (was === null || unchanged === null || now === null) throw new Error("willys.se gave no total for the order");
+      // Prices have moved when the order as it was placed no longer costs
+      // what it was placed for, or checkout marks a line's price as updated.
+      const moved = Math.abs(unchanged - was) >= 0.01 || (status.cartStatus ?? []).some((l) => l.updatedPrice);
+      const asked = pendingOrderChange(ctx, week.id);
+      const agreed = opts.confirmed === true && asked?.order === order.number && Math.abs(asked.total - now) < 1;
+      if (moved && !agreed) {
+        store.set(pendingKey(week.id), JSON.stringify({ order: order.number, total: now } satisfies PendingOrderChange));
+        const drift = unchanged - was;
+        const prices = Math.abs(drift) >= 0.01 ? ` Today's prices alone make the order ${kr(Math.abs(drift))} ${drift > 0 ? "more" : "less"}.` : "";
+        return `**The placed order is not changed yet.** Willys charges a changed order at today's prices, and they have moved since it was placed. The order was ${kr(was)}; with this change (${what}) it would be ${kr(now)}.${prices} Reply **yes** to change the order, or **no** to leave it as it is.`;
+      }
+      const next = await willys.replaceOrder(order.number, card.id);
+      if (!next?.includes(`/kassa/bekraftelse/${order.number}`)) {
+        return `The placed order is not changed: Willys wants the payment approved in a browser, which I cannot do. To change it (${what}), ${byHand}.`;
+      }
+      replaced = true;
+      store.markAnnounced(week.id, week.version);
+      store.delete(pendingKey(week.id));
+      store.logChange("food-bot", `changed the placed Willys order: ${what}`);
+      return `Willys order changed: ${what}. It is now ${kr(now)} (was ${kr(was)}).`;
+    })();
+  } catch (err) {
+    note = `Changing the placed order failed, so it is as it was: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`;
+  }
+  if (!replaced) {
+    try {
+      await willys.cancelOrderEdit();
+    } catch (err) {
+      console.error(`Could not cancel the change to order ${order.number}: ${err instanceof Error ? err.message : err}`);
+      note = `${note}\n\n**Check the order on willys.se:** I opened it for changes and could not close it again. Under Mina köp, cancel the change (Avbryt ändring) so it is picked as placed.`;
+    }
+  }
+  return note;
+}
+
+// A member's yes or no to changing the placed order at today's prices.
+export async function answerOrderChange(ctx: Context, week: Week, yes: boolean): Promise<string> {
+  if (!yes) {
+    ctx.store.delete(pendingKey(week.id));
+    ctx.store.markAnnounced(week.id, week.version);
+    return "OK, the placed order stays as it is. The week here keeps the change, so it no longer matches the order.";
+  }
+  return orderNote(ctx, week, await orderState(ctx, week), { confirmed: true });
+}
+
+// What became of an approved week's changes on willys.se: copied to the
+// cart while the order is not placed, and to the placed order while
+// willys.se still takes changes to it.
+async function orderNote(ctx: Context, week: Week, state: OrderState, opts: { confirmed?: boolean } = {}): Promise<string> {
+  if (!state.placed) return `Willys cart: ${await syncCart(ctx, week)}.`;
+  const order = state.order;
+  if (!order) return "I find neither this week's cart nor an order for this pickup on willys.se, so nothing was changed there.";
+  if (order.editing) return "The placed order is not changed: it is open for changes on willys.se right now. Finish or cancel that there, then ask me again.";
+  if (!order.editable) return "The placed order is not changed: Willys no longer takes changes to it.";
+  return changeOrder(ctx, week, order, opts);
+}
+
 // After a member's message: shows a waiting week's changes, or brings an
-// approved week's cart in line with them while the order is not placed.
+// approved week's cart or placed order in line with them.
 // Returns a line to add to the reply, if any.
 export async function afterChange(ctx: Context, weekId: string, state: OrderState | null, opts: { emailIntro?: string; inReplyTo?: string } = {}): Promise<{ note: string; emailed: boolean }> {
   const week = ctx.store.week(weekId);
   if (!week || week.version <= week.announcedVersion) return { note: "", emailed: false };
   if (week.status === "open") return { note: "", emailed: await announceChanges(ctx, weekId, opts).then((shown) => shown && opts.emailIntro !== undefined) };
-  if (week.status !== "applied" || !state || state.placed) return { note: "", emailed: false };
-  return { note: `Willys cart: ${await syncCart(ctx, week)}.`, emailed: false };
+  if (week.status !== "applied" || !state) return { note: "", emailed: false };
+  return { note: await orderNote(ctx, week, state), emailed: false };
 }
 
 async function announce(ctx: Context, week: Week, emailIntro: string | undefined, inReplyTo?: string): Promise<void> {
@@ -319,7 +472,7 @@ export async function apply(ctx: Context, week: Week, opts: { dryRun?: boolean }
   try {
     await ctx.ensureLogin();
     const cart = await willys.cart();
-    const inCart = new Map(cart.products.map((p) => [p.code, p.quantity]));
+    const inCart = new Map(cart.products.map((p) => [p.code, pieces(p)]));
     after = await willys.setCartQuantities([...wanted].map(([code, qty]) => ({ code, qty: (inCart.get(code) ?? 0) + qty })));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -439,3 +592,6 @@ function pickupLabel(weekId: string): string {
 }
 
 const fmt = (n: number) => n.toFixed(2).replace(/\.00$/, "");
+
+// An amount as willys.se writes it: "1 412,15 kr".
+const kr = (n: number) => `${n.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, " ")} kr`;

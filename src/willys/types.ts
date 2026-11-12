@@ -9,6 +9,14 @@ export interface Customer {
   email?: string;
   storeId?: string;
   homeStoreId?: string;
+  // Cards saved on the account, which checkout can pay with.
+  savedCards?: SavedCard[];
+}
+
+export interface SavedCard {
+  id: string;
+  expired?: boolean;
+  defaultCard?: boolean;
 }
 
 export interface Promotion {
@@ -86,13 +94,49 @@ export interface CartProduct {
   displayVolume?: string;
 }
 
+export interface Money {
+  value: number;
+  formattedValue?: string;
+}
+
 export interface Cart {
   products: CartProduct[];
   totalPrice?: string;
   totalItems?: number;
   totalDiscount?: string;
   slot?: unknown;
+  // Set while a placed order is open for changes ("Ändra order"): the
+  // order's number. The cart then holds the order's lines and slot.
+  orderReference?: string | null;
+  // "PspPayexAll" for card payment.
+  paymentType?: string | null;
   [key: string]: unknown;
+}
+
+// A placed order, as the account's order list has it.
+export interface Order {
+  orderNumber: string;
+  // Whether willys.se still lets the order be changed.
+  editable?: boolean;
+  // Start of the pickup slot, epoch milliseconds.
+  deliveryDateFrom?: number;
+  // When it was placed, epoch milliseconds.
+  placed?: number;
+  // "1 412,15 kr".
+  total?: string;
+  statusDisplay?: string;
+}
+
+export interface OrderDetails extends Order {
+  totalPrice?: string;
+  cancelled?: boolean;
+  // Until when the order can be changed: "Torsdag 12 Nov kl. 23:59".
+  slotCloseTimeFormatted?: string;
+}
+
+// What checkout says about each line of the cart.
+export interface CartStatus {
+  cartStatus?: { updatedPrice?: boolean; outOfStock?: boolean; entryProduct?: { code?: string; name?: string } }[] | null;
 }
 
 export interface Store {

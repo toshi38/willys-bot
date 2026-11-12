@@ -110,8 +110,9 @@ export interface Scenario {
   // Where the scenario comes from.
   about: string;
   // The week's state: waiting for a decision, approved with the order not
-  // yet placed or already placed, or no week at all.
-  week: "open" | "approved" | "placed" | "none" | "past";
+  // yet placed, placed and still open for changes, placed and closed for
+  // changes, no week at all, or picked up.
+  week: "open" | "approved" | "placed" | "closed" | "none" | "past";
   from: "Carin" | "Stephen";
   text: string;
   thread?: { from: string; text: string }[];
@@ -141,6 +142,11 @@ function dishesKept(s: Seen, except: string[] = []): string[] {
 
 function language(s: Seen, want: "English" | "Swedish"): string[] {
   return messageLanguage(s.reply) === want ? [] : [`replied in ${messageLanguage(s.reply)}, not ${want}: "${s.reply.slice(0, 80)}"`];
+}
+
+// The bot changes a placed order itself, so the member is not sent to do it.
+function sentToWillys(s: Seen): string[] {
+  return /willys\.se|ändra order/i.test(s.reply) ? ["sends them to willys.se to change the order"] : [];
 }
 
 function noRedraft(s: Seen): string[] {
@@ -295,14 +301,47 @@ export const SCENARIOS: Scenario[] = [
     check: (s) => [...(s.redraft ? [] : ["did not ask for a redraft"]), ...unchanged(s)],
   },
   {
-    name: "order-already-placed",
-    about: "Changes after the order is placed must point to willys.se (29 Oct)",
+    name: "placed-order-change",
+    about: "A change after the order is placed goes into the week, and the bot applies it to the order itself",
     week: "placed",
     from: "Stephen",
     text: "add a vanilla kvarg please",
     check: (s) => [
-      ...(/willys/i.test(s.reply) ? [] : ["reply does not send them to willys.se"]),
-      ...(/(cart|kundvagn)[^.]*(updated|uppdaterad)/i.test(s.reply) ? ["claims the cart was updated"] : []),
+      ...(qty(s.after, "KVARG_ST") + qty(s.after, "KVARG_GARANT_ST") >= 1 ? [] : ["no kvarg in the week"]),
+      ...onlyChanged(s, ["KVARG_ST", "KVARG_GARANT_ST"]),
+      ...sentToWillys(s),
+      ...(/order[^.]*\b(is|has been|was)\b[^.]*\b(changed|updated)/i.test(s.reply) ? ["claims the order is changed, which only the line added after the reply can say"] : []),
+      ...language(s, "English"),
+    ],
+  },
+  {
+    name: "placed-order-go-ahead",
+    about: "\"you can change the order\" after a removal that did not reach the placed order was answered with \"I can't\" (12 Nov)",
+    week: "placed",
+    from: "Stephen",
+    text: "you can change the order",
+    thread: [
+      { from: "Stephen", text: "I just saw you got bananas, remove them, we have them at home" },
+      { from: "food-bot", text: "Done. I removed the bananas from this week's shop. The order is already placed, so this change does not reach it." },
+    ],
+    check: (s) => [
+      // The seeded week still has the bananas, so removing them is right.
+      ...onlyChanged(s, ["BANANA_KG"]),
+      ...dishesKept(s),
+      ...noRedraft(s),
+      ...sentToWillys(s),
+      ...(/\b(can't|cannot|can not|unable|no access)\b/i.test(s.reply) ? ["says it cannot change the order"] : []),
+      ...language(s, "English"),
+    ],
+  },
+  {
+    name: "placed-order-closed",
+    about: "Once Willys takes no more changes, a change is recorded and the member is told it does not reach the order",
+    week: "closed",
+    from: "Stephen",
+    text: "add a vanilla kvarg please",
+    check: (s) => [
+      ...(/(no longer|not|too late|can't|cannot|closed)[^.]*(chang|reach|order)|(order)[^.]*(no longer|not|too late|can't|cannot|closed)/i.test(s.reply) ? [] : ["reply does not say the order can no longer be changed"]),
       ...language(s, "English"),
     ],
   },

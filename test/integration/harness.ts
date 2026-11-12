@@ -45,10 +45,17 @@ export const CATALOG: Product[] = [
 export class FakeWillys {
   readonly catalog: Product[];
   constructor(catalog: Product[] = CATALOG) {
-    this.catalog = catalog;
+    this.catalog = catalog.map((p) => ({ ...p }));
   }
   readonly cart = new Map<string, number>();
   slotInCart: string | null = null;
+  // Placed orders, newest first, and the one open for changes, if any.
+  readonly orders: { orderNumber: string; lines: Map<string, number>; slot: string | null; total: number; editable: boolean }[] = [];
+  editing: string | null = null;
+  // Cards saved on the account.
+  cards = [{ id: "card-1", defaultCard: true, expired: false }];
+  // Makes placing a changed order answer with a payment page to approve.
+  paymentPage = false;
   readonly calls: { method: string; path: string; body: unknown }[] = [];
   readonly failing = new Set<string>();
   slots: { code: string; startTime: number; endTime: number; closeTime: number; available: boolean; formattedTime: string; closeTimeFormatted: string }[] = [];
@@ -87,7 +94,7 @@ export class FakeWillys {
     if (route === "GET /api/config") return send(res, 200, {}, { "Set-Cookie": "JSESSIONID=test; Path=/" });
     if (route === "GET /axfood/rest/csrf-token") return send(res, 200, "csrf");
     if (route === "POST /login") return send(res, 200, {});
-    if (route === "GET /axfood/rest/customer") return send(res, 200, { uid: "test@example.com", name: "Test", storeId: "9999" });
+    if (route === "GET /axfood/rest/customer") return send(res, 200, { uid: "test@example.com", name: "Test", storeId: "9999", savedCards: this.cards });
     if (route === "GET /search/clean") {
       const q = (url.searchParams.get("q") ?? "").toLowerCase();
       const words = q.split(/\s+/).filter(Boolean);
@@ -114,13 +121,56 @@ export class FakeWillys {
       return send(res, 200, {});
     }
     if (route === "GET /axfood/rest/v2/slot/slotInCart") return send(res, 200, this.slots.find((s) => s.code === this.slotInCart) ?? null);
+    if (route === "GET /axfood/rest/account/orders") {
+      return send(res, 200, this.orders.map((o, i) => ({ orderNumber: o.orderNumber, editable: o.editable, deliveryDateFrom: this.slots.find((s) => s.code === o.slot)?.startTime, placed: this.orders.length - i, total: kr(o.total) })));
+    }
+    if (route.startsWith("GET /axfood/rest/v2/order/orders/")) {
+      const o = this.orders.find((x) => x.orderNumber === url.pathname.split("/").pop());
+      if (!o) return send(res, 404, { error: "no such order" });
+      return send(res, 200, { orderNumber: o.orderNumber, editable: o.editable, totalPrice: kr(o.total), slotCloseTimeFormatted: "the day before, 23:59" });
+    }
+    if (route === "POST /axfood/rest/v2/cart/carts") {
+      const o = this.orders.find((x) => x.orderNumber === url.searchParams.get("orderNumber"));
+      if (!o?.editable) return send(res, 400, { error: "order cannot be changed" });
+      this.cart.clear();
+      for (const [code, q] of o.lines) this.cart.set(code, q);
+      this.editing = o.orderNumber;
+      return send(res, 200, this.#cart());
+    }
+    if (route === "DELETE /axfood/rest/v2/cart") {
+      this.cart.clear();
+      this.editing = null;
+      return send(res, 200, this.#cart());
+    }
+    if (route === "GET /axfood/rest/v2/cart/status") return send(res, 200, { cartStatus: [] });
+    if (route === "POST /axfood/rest/v2/checkout/paymentmode") return send(res, 200, {});
+    if (route === "POST /axfood/rest/v2/singlestepcheckout/placeOrder") {
+      const o = this.orders.find((x) => x.orderNumber === this.editing);
+      if (!o) return send(res, 400, { error: "no order is open for changes" });
+      if (this.paymentPage) return send(res, 402, {}, { Location: "https://pay.example.com/approve" });
+      o.lines = new Map(this.cart);
+      o.total = this.#total();
+      this.cart.clear();
+      this.editing = null;
+      return send(res, 201, null, { Location: `/kassa/bekraftelse/${o.orderNumber}` });
+    }
     return send(res, 404, { error: `no fake for ${route}` });
   }
 
   // Placing the order on willys.se empties the cart and takes the slot.
   placeOrder(): void {
+    this.orders.unshift({ orderNumber: String(1000000001 + this.orders.length), lines: new Map(this.cart), slot: this.slotInCart, total: this.#total(), editable: true });
     this.cart.clear();
     this.slotInCart = null;
+  }
+
+  // A price change after the order was placed, as when an offer ends.
+  setPrice(code: string, price: number): void {
+    this.catalog.find((c) => c.code === code)!.price = price;
+  }
+
+  #total(): number {
+    return [...this.cart].reduce((sum, [code, q]) => sum + this.catalog.find((c) => c.code === code)!.price * q, 0);
   }
 
   #cart() {
@@ -128,7 +178,7 @@ export class FakeWillys {
       const p = this.catalog.find((c) => c.code === code)!;
       return { code, name: p.name, quantity, totalPrice: kr(p.price * quantity) };
     });
-    return { products, totalPrice: kr([...this.cart].reduce((sum, [code, q]) => sum + this.catalog.find((c) => c.code === code)!.price * q, 0)) };
+    return { products, totalPrice: kr(this.#total()), orderReference: this.editing, paymentType: "PspPayexAll" };
   }
 }
 

@@ -55,7 +55,14 @@ const snapshot = (): Snapshot => ({
 
 const before = snapshot();
 const week = scenario.week === "past" ? store.currentWeek(localDate(new Date())) : store.week(weekId);
-const order = scenario.week === "approved" ? { placed: false, closeTime: "Thursday 23:59" } : scenario.week === "placed" ? { placed: true, closeTime: null } : null;
+const order =
+  scenario.week === "approved"
+    ? { placed: false, closeTime: "Thursday 23:59", order: null }
+    : scenario.week === "placed"
+      ? { placed: true, closeTime: null, order: { number: "1000000001", total: 900, editable: true, editing: false, closes: "Thursday 23:59" } }
+      : scenario.week === "closed"
+        ? { placed: true, closeTime: null, order: { number: "1000000001", total: 900, editable: false, editing: false, closes: null } }
+        : null;
 const started = Date.now();
 let reply = "";
 let redraft = "";
