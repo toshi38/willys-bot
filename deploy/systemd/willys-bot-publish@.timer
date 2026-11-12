@@ -1,12 +1,13 @@
-# Hourly: an ordered week's recipes go on the recipe site within the hour
-# after its order is placed on willys.se. The run only logs in to Willys
-# while an ordered week is waiting to go up.
+# Every five minutes: an ordered week's recipes go on the recipe site a few
+# minutes after its order is placed on willys.se. A run only asks Willys
+# about the cart while an ordered week is waiting to go up, and reuses the
+# saved session, so the frequent checks stay light.
 [Unit]
-Description=food-bot: publish placed orders' recipes every hour (%i)
+Description=food-bot: publish placed orders' recipes every five minutes (%i)
 
 [Timer]
-OnCalendar=hourly
-RandomizedDelaySec=300
+OnCalendar=*:0/5
+RandomizedDelaySec=30
 Persistent=true
 
 [Install]
