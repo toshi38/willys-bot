@@ -88,32 +88,33 @@ The site is public, so secrets are kept out of it twice: the pre-commit hook (`.
 `npm install`) checks staged `site-data/` files and runs gitleaks when it is installed, and the
 Netlify build refuses data that looks like it carries a secret.
 
-## Running on hermes
+## Running it on your server
 
-Timers per household (`deploy/systemd/`): offer snapshot daily at 06:30, inbox every five
-minutes, plan on Wednesdays at 07:00, and an hourly update that fast-forwards hermes to `main`
-(`deploy/update.sh`), so whatever is pushed to `main` is what runs. A failed run emails the operator (`operator` in
-`household.json`, or the first member) its last log lines, at most once every six hours per
-unit.
+The bot runs on an always-on Linux machine with systemd. Timers per household
+(`deploy/systemd/`): offer snapshot daily at 06:30, inbox every five minutes, plan on
+Wednesdays at 07:00, and an hourly update that fast-forwards the server to `main`
+(`deploy/update.sh`), so whatever is pushed to `main` is what runs. A failed run emails the
+operator (`operator` in `household.json`, or the first member) its last log lines, at most
+once every six hours per unit.
 
-From the Mac, once:
-
-```sh
-deploy/sync-secrets.sh          # Resend key and Willys login from Infisical (Food Bot)
-deploy/push-household.sh lau    # config, preferences and database
-```
-
-On hermes:
+From your own machine, once (set `HERMES_HOST` to the server's ssh host):
 
 ```sh
-git clone git@github.com:toshi38/willys-bot.git ~/code/willys-bot
-cd ~/code/willys-bot && deploy/setup.sh lau
-deploy/run.sh lau inbox --dry-run                       # by hand, with the timers' credentials
-journalctl --user -u 'willys-bot-*@lau'                 # logs
+deploy/sync-secrets.sh                 # Resend key and Willys login from Infisical (Food Bot)
+deploy/push-household.sh <household>   # config, preferences and database
 ```
 
-Once pushed, hermes holds the live household data; the Mac's copy under `data/` and
-`households/` is no longer updated.
+On the server:
+
+```sh
+git clone https://github.com/toshi38/willys-bot.git ~/code/willys-bot
+cd ~/code/willys-bot && deploy/setup.sh <household>
+deploy/run.sh <household> inbox --dry-run               # by hand, with the timers' credentials
+journalctl --user -u 'willys-bot-*@<household>'         # logs
+```
+
+Once pushed, the server holds the live household data; the copy under `data/` and
+`households/` on your own machine is no longer updated.
 
 ## Development
 
