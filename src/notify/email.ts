@@ -92,7 +92,7 @@ export async function getReceived(household: Household, id: string, fetchImpl: t
 async function call(household: Household, path: string, fetchImpl: typeof fetch, init: RequestInit = {}): Promise<unknown> {
   const key = readSecret(household.config.mail.secret, "key");
   const request = () => fetchImpl(`${API}${path}`, { ...init, headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${key}` } });
-  // Reads are retried after a network failure; a send is not, but it
+  // Reads are retried after a network failure or a server error; a send is not, but it
   // carries an Idempotency-Key, so a retry by the caller cannot send twice.
   const res = init.method && init.method !== "GET" ? await request() : await withRetry(request);
   const body = (await res.json().catch(() => ({}))) as { message?: string };
@@ -176,15 +176,18 @@ export function classifyReply(text: string): Decision {
   return { kind: "change", feedback: text.trim() };
 }
 
-// Retries a request that failed on the network (not with an HTTP error),
-// waiting a little longer each time.
+// Retries a request that failed on the network or that the server could not
+// serve (a 5xx or 429 reply), waiting a little longer each time. Any other
+// HTTP error is the caller's to report, as is the reply to the last attempt.
 async function withRetry(f: () => Promise<Response>, attempts = 3, delayMs = 2000): Promise<Response> {
   for (let i = 1; ; i++) {
     try {
-      return await f();
+      const res = await f();
+      if (i >= attempts || (res.status < 500 && res.status !== 429)) return res;
+      await res.body?.cancel();
     } catch (err) {
       if (i >= attempts) throw err;
-      await new Promise((r) => setTimeout(r, delayMs * i));
     }
+    await new Promise((r) => setTimeout(r, delayMs * i));
   }
 }

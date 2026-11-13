@@ -151,9 +151,9 @@ test("a failed send reports the status and Resend's message", async () => {
 });
 
 test("a failed read without a JSON body says there are no details and leaves out the query", async () => {
-  const { fetchImpl } = resend(() => new Response("Bad Gateway", { status: 502 }));
-  await assert.rejects(getReceived(members, "abc", fetchImpl), { message: "Resend GET /emails/receiving/abc failed (502): no details" });
-  await assert.rejects(listReceived(members, new Date(0), fetchImpl), { message: "Resend GET /emails/receiving failed (502): no details" });
+  const { fetchImpl } = resend(() => new Response("Not Found", { status: 404 }));
+  await assert.rejects(getReceived(members, "abc", fetchImpl), { message: "Resend GET /emails/receiving/abc failed (404): no details" });
+  await assert.rejects(listReceived(members, new Date(0), fetchImpl), { message: "Resend GET /emails/receiving failed (404): no details" });
 });
 
 test("a received email is fetched by its escaped id", async () => {
@@ -210,9 +210,40 @@ test("a send is not retried after a network failure", async () => {
   assert.equal(calls.length, 1);
 });
 
-test("an HTTP error on a read is not retried", async () => {
-  const { calls, fetchImpl } = resend(() => new Response("{}", { status: 500 }));
-  await assert.rejects(getReceived(members, "abc", fetchImpl), /failed \(500\)/);
+test("a read is retried after a server error", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  for (const status of [502, 429]) {
+    const { calls, fetchImpl } = resend((n) => (n === 1 ? new Response("Bad Gateway", { status }) : new Response(JSON.stringify({ id: "abc" }), { status: 200 })));
+    const got = getReceived(members, "abc", fetchImpl);
+    await waitScheduled();
+    assert.equal(calls.length, 1);
+    t.mock.timers.tick(2000);
+    assert.equal((await got).id, "abc");
+    assert.equal(calls.length, 2);
+  }
+});
+
+test("a read reports the server error after three tries", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { calls, fetchImpl } = resend(() => new Response("Bad Gateway", { status: 502 }));
+  const outcome = assert.rejects(getReceived(members, "abc", fetchImpl), { message: "Resend GET /emails/receiving/abc failed (502): no details" });
+  await waitScheduled();
+  t.mock.timers.tick(2000);
+  await waitScheduled();
+  t.mock.timers.tick(4000);
+  await outcome;
+  assert.equal(calls.length, 3);
+});
+
+test("a client error on a read is not retried", async () => {
+  const { calls, fetchImpl } = resend(() => new Response("{}", { status: 404 }));
+  await assert.rejects(getReceived(members, "abc", fetchImpl), /failed \(404\)/);
+  assert.equal(calls.length, 1);
+});
+
+test("a send is not retried after a server error", async () => {
+  const { calls, fetchImpl } = resend(() => new Response("Bad Gateway", { status: 502 }));
+  await assert.rejects(sendToMembers(members, { subject: "s", markdown: "m" }, fetchImpl), /failed \(502\)/);
   assert.equal(calls.length, 1);
 });
 
