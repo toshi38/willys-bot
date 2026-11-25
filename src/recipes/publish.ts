@@ -15,7 +15,7 @@ import { isoWeek } from "./site.ts";
 // dishes, so a week whose content changes before its pickup goes up again. The week goes into
 // weeks/<pickup>.json in the household's site repository (`site.repo` in
 // household.json), cloned next to the household's data, and is pushed to
-// main, which Netlify builds from.
+// main, where the repository's Pages workflow builds and deploys the site.
 
 const publishedKey = (weekId: string) => `site.publishedHash.${weekId}`;
 

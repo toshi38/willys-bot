@@ -103,13 +103,14 @@ Each ordered week's recipes go on a static site: a page per week, each recipe in
 mode that walks the steps one at a time with timers. The site's code is here (`site/`,
 `src/recipes/`); a household's weeks live in a repository of their own, set as `site.repo` in
 `household.json`. The publish timer pushes each ordered week there as `weeks/<pickup>.json`, and a
-Netlify site builds from that repository by cloning this one. Without `site.repo` nothing is
-published. [toshi38/food](https://github.com/toshi38/food) is a working example of such a
-repository, with its `netlify.toml`.
+GitHub Actions workflow in that repository builds the site with this repository's code and
+deploys it to GitHub Pages on every push. Without `site.repo` nothing is published.
+[toshi38/food](https://github.com/toshi38/food) is a working example of such a repository, with
+its `.github/workflows/pages.yml`. A change to the site's code here reaches a household's site
+on its next push, or when that workflow is run by hand.
 
-`site-data/` here is example data. Netlify builds it for this repository's deploy previews
-(`netlify.toml`), so a change to the site can be seen before it lands, and
-`npm run site -- --data site-data` builds it locally into `dist/`.
+`site-data/` here is example data. `npm run site -- --data site-data` builds it into `dist/`,
+to see a change to the site before it lands.
 
 How a recipe is written (steps in cooking order, timers, passive steps that run while you carry
 on) is in `.claude/skills/recipe-writing/SKILL.md`, and `src/recipes/check.ts` enforces it.

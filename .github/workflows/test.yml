@@ -1,5 +1,6 @@
-# Tests and typecheck on every push and pull request. Netlify runs the
-# recipe site's tests itself before each deploy (netlify.toml).
+# Tests and typecheck on every push and pull request, and a build of the
+# recipe site from the example data in site-data/, which fails when that
+# data does not parse or looks like it carries a secret.
 name: test
 
 on:
@@ -23,3 +24,4 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: npm run site -- --data site-data

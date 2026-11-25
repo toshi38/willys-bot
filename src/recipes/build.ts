@@ -5,8 +5,8 @@ import { recipeProblems } from "./check.ts";
 import { leakProblems } from "./leaks.ts";
 import { buildSite, SiteConfig, SiteWeek } from "./site.ts";
 
-// Builds the recipe site from exported recipe data (Netlify runs it, see
-// netlify.toml):
+// Builds the recipe site from exported recipe data (the Pages workflow in
+// a household's site repository runs it, see README):
 //   <data>/site.json         { "title": "...", "language": "en" }
 //   <data>/weeks/<date>.json one SiteWeek per pickup
 // into <out>, replacing what is there. It stops on data that does not

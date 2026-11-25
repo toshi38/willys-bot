@@ -4,8 +4,7 @@
 
 This is a personal project that nobody else uses, and changes are not reviewed. So:
 
-- Pull requests are optional. Open one when it is handy, for example to get a Netlify deploy
-  preview of the recipe site. Otherwise commit to `main` and push.
+- Pull requests are optional. Open one when it is handy. Otherwise commit to `main` and push.
 - An open PR can be marked ready and merged without asking.
 - Keep each change working before it lands on `main`: `npm test` and `npm run typecheck` pass,
   and for intake or tool behaviour, the relevant eval scenarios

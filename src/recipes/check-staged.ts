@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { leakProblems } from "./leaks.ts";
 
 // The pre-commit check for the recipe site's data: every staged file under
-// site-data/ goes through the same leak check as the Netlify build, on the
+// site-data/ goes through the same leak check as the site build, on the
 // content being committed rather than the working tree.
 
 const git = (...args: string[]) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
